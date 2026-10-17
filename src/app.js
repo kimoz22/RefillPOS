@@ -2,13 +2,13 @@ import { money, dateLabel, esc } from "./utils/format.js";
 import { normalizeState } from "./data/default-state.js";
 import { state, initializeDatabase, persist, replaceState, setErrorNotifier } from "./data/indexeddb.js";
 import { heading, statCard, salesTable, modal } from "./components/shared.js";
-import { renderLogin } from "./components/login.js";
-import { getCurrentUser, logoutUser } from "./data/users.js";
+import { logoutUser } from "./data/users.js";
 
 setErrorNotifier((message) => toast(message, "error"));
 
 const loginRoot = document.getElementById("login-root");
 const appShell = document.getElementById("app-shell");
+const DEFAULT_USER = { username: "admin", name: "Alex Morgan", role: "Administrator" };
 let currentUser = null;
 const ui = { page: "dashboard", period: "week", category: "All products", search: "", cart: [], customerId: "", payment: "Cash", reportPeriod: "week", reportFrom: new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10), reportTo: new Date().toISOString().slice(0,10), discountAuthorized: false, discountValue: "", cashReceived: "", issueBottle: false };
 const pageNames = { dashboard: "Overview", pos: "Point of sale", inventory: "Inventory", bottles: "Bottle tracking", customers: "Customers", expenses: "Expenses", reports: "Reports", settings: "Settings" };
@@ -20,10 +20,7 @@ function toast(message, kind = "success") {
   region.appendChild(el); setTimeout(() => el.remove(), 3500);
 }
 function showLogin() {
-  currentUser = null;
-  appShell.hidden = true;
-  loginRoot.hidden = false;
-  renderLogin(loginRoot, showMain);
+  showMain(DEFAULT_USER);
 }
 function showMain(user) {
   currentUser = user;
@@ -456,7 +453,7 @@ document.addEventListener("submit",event=>{
 });
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
 document.getElementById("help-btn").addEventListener("click",()=>toast("Help center documentation is not connected in this offline demo."));
-document.getElementById("profile-menu").addEventListener("click",async()=>{try{await logoutUser();showLogin();}catch(error){console.error("Could not sign out.",error);toast("Could not sign out. Check the server connection and try again.","error");}});
+document.getElementById("profile-menu").addEventListener("click",async()=>{try{await logoutUser();showMain(DEFAULT_USER);}catch(error){console.error("Could not sign out.",error);toast("Could not sign out. Check the server connection and try again.","error");}});
 document.getElementById("alerts-btn").addEventListener("click",()=>{const low=state.products.filter(p=>p.stock<=p.lowAt);toast(low.length?`${low.length} low-stock item(s): ${low.map(p=>p.name).join(", ")}`:"You're all caught up — no inventory alerts.");});
 document.addEventListener("keydown",event=>{if(event.key==="Escape")document.getElementById("modal-root").innerHTML="";if(event.key==="F2"){event.preventDefault();go("pos");}});
 const today=new Date();document.getElementById("today-label").textContent=today.toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
@@ -464,9 +461,7 @@ document.querySelectorAll(".nav-item[data-page]").forEach(button=>button.addEven
 window.addEventListener("resize",()=>{if(ui.page==="dashboard")drawChart();if(ui.page==="reports")drawReportChart();});
 document.getElementById("page-container").innerHTML = '<div class="panel" role="status">Opening local database…</div>';
 initializeDatabase().then(async () => {
-  const user = await getCurrentUser();
-  if (user) showMain(user);
-  else showLogin();
+  showMain(DEFAULT_USER);
 }).catch(error => {
   console.error("Could not initialize the POS database.", error);
   loginRoot.innerHTML = '<main class="login-page"><section class="login-card" role="alert"><h1>Could not open the workspace</h1><p>Your POS data or login session could not be loaded. Check that browser storage is enabled, then reload this page.</p></section></main>';
