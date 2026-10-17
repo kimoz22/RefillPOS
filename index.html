@@ -11,7 +11,10 @@
   <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
-  <div class="app-shell">
+  <div id="login-root" aria-live="polite">
+    <div class="login-loading" role="status">Loading ClearSpring…</div>
+  </div>
+  <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar" id="sidebar">
       <a href="#" class="brand" data-page="dashboard">
         <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3.5C13 8.2 7 14.3 7 20a9 9 0 0 0 18 0c0-5.7-6-11.8-9-16.5Z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M11.5 21c.3 2.4 2 4 4.4 4.4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"/></svg></span>
@@ -31,7 +34,7 @@
         <div class="help-card"><div class="help-icon">✳</div><strong>Need a hand?</strong><span>Get help with your station setup.</span><button type="button" id="help-btn">Visit help center <span>↗</span></button></div>
         <button class="nav-item settings-link" data-page="settings"><span class="nav-icon">⚙</span>Settings</button>
         <div class="profile">
-          <div class="avatar">AM</div><div class="profile-copy"><strong>Alex Morgan</strong><small>Administrator</small></div><button aria-label="Account options" class="profile-more" id="profile-menu">···</button>
+          <div class="avatar" id="profile-initials">AM</div><div class="profile-copy"><strong id="profile-name">Alex Morgan</strong><small id="profile-role">Administrator</small></div><button type="button" aria-label="Sign out" title="Sign out" class="profile-more" id="profile-menu">↪</button>
         </div>
       </div>
     </aside>
@@ -42,7 +45,7 @@
         <div class="top-actions">
           <span class="today-label" id="today-label"></span>
           <button class="icon-button notification-button" aria-label="Notifications" id="alerts-btn">♧<i></i></button>
-          <div class="top-avatar">AM</div>
+          <div class="top-avatar" id="top-avatar">AM</div>
         </div>
       </header>
       <div class="page-container" id="page-container"></div>

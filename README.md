@@ -4,9 +4,30 @@ A responsive, browser-based POS prototype for a Philippine water-refill station.
 
 ## Run
 
-Because the app uses JavaScript modules, serve the project over HTTP instead of opening `index.html` directly. From the project folder, run `python -m http.server 8000` and open `http://localhost:8000`.
+Install the server packages once, then run the app from the project folder:
+
+```powershell
+npm install
+npm start
+```
+
+Open `http://localhost:8000`. Run the Node server (not `python -m http.server`): the login and email notification use its API.
 
 Workspace data is saved in that browser's IndexedDB database (`clearspring-pos`), with separate stores for products, customers, sales, expenses, stock movements, audit logs, bottle records, and workspace settings. Existing data in the previous local-storage format is migrated automatically the first time the app opens. Use **Settings → Download data backup** regularly when evaluating the prototype.
+
+Demo sign-ins: **admin** / **2468** (Administrator) and **user** / **1234** (Staff). Use the sign-out icon in the sidebar profile to return to the login screen. Sign-in lasts for the current browser tab.
+
+## Gmail login alerts
+
+To send successful-login alerts to `rogerviral74@gmail.com`:
+
+1. Enable 2-Step Verification on the Gmail account that will send the alerts, then create a Google App Password for this app. Do not use your normal Gmail password.
+2. Copy `.env.example` to `.env` in PowerShell: `Copy-Item .env.example .env`.
+3. Set `SMTP_USER` to the sending Gmail address and `SMTP_APP_PASSWORD` to the App Password (enter the password without spaces). Keep `LOGIN_ALERT_TO=rogerviral74@gmail.com`.
+4. Replace `SESSION_SECRET` with a long, random secret and change the demo account passwords before sharing the app.
+5. Restart the Node server with `npm start`.
+
+The sender and recipient may be the same Gmail account. Invalid sign-in attempts do not send email. If Gmail is not configured or cannot deliver an alert, the user can still sign in; the app displays a warning and the server logs the delivery failure. The notification includes the account name, role, sign-in time, and remote address, but never the password. Keep `.env` private; it is excluded from the static files served by the app.
 
 ## Project structure
 
@@ -18,20 +39,27 @@ WaterRefillPOS/
 ├── src/
 │   ├── app.js
 │   ├── components/
+│   │   ├── login.js
 │   │   └── shared.js
 │   ├── data/
 │   │   ├── default-state.js
-│   │   └── indexeddb.js
+│   │   ├── indexeddb.js
+│   │   └── users.js
 │   └── utils/
 │       └── format.js
+├── server.js
+├── package.json
+├── .env.example
+├── .gitignore
 └── README.md
 ```
 
 - `src/app.js` wires up app navigation, pages, and POS actions.
-- `src/components/` contains reusable UI pieces such as tables, cards, and modals.
-- `src/data/` defines the initial workspace data and browser database.
+- `src/components/` contains the login screen and reusable UI pieces such as tables, cards, and modals.
+- `src/data/` defines the initial workspace data, browser database, and login API client.
 - `src/utils/` contains shared formatting and escaping helpers.
 - `assets/` contains the app's stylesheets and other static assets.
+- `server.js` serves the app, verifies demo logins, manages signed sessions, and sends Gmail notifications.
 
 The sample workspace is seeded with Philippine peso prices, Makati business details, sample products, customers, transactions, and expenses. The manager PIN for trying the authorization dialogs is `2468`; change it in the source before sharing the demo. This PIN is intentionally not secure.
 
@@ -48,7 +76,7 @@ The sample workspace is seeded with Philippine peso prices, Makati business deta
 
 ## Important production limitation
 
-This is a **single-device UI prototype**, not a secure production POS or a complete multi-user accounting system. Browser IndexedDB is editable by the user, is not encrypted or shared across devices, and can be lost. The demo PIN and role labels do not provide real authorization.
+This is a **single-device UI prototype**, not a complete multi-user accounting system. Browser IndexedDB is editable by the user, is not encrypted or shared across devices, and can be lost. Server-side demo passwords are still sample credentials and must be changed; deploy with HTTPS and production-grade account/password management before handling real customer or payment data.
 
 Before handling real customer or payment data, replace the browser-only state layer with a secured backend and database. That deployment still needs, at minimum:
 

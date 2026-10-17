@@ -1,0 +1,12 @@
+{
+  "name": "clearspring-water-refill-pos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "nodemailer": "^10.1.2"
+  }
+}

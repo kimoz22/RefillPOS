@@ -2,9 +2,14 @@ import { money, dateLabel, esc } from "./utils/format.js";
 import { normalizeState } from "./data/default-state.js";
 import { state, initializeDatabase, persist, replaceState, setErrorNotifier } from "./data/indexeddb.js";
 import { heading, statCard, salesTable, modal } from "./components/shared.js";
+import { renderLogin } from "./components/login.js";
+import { getCurrentUser, logoutUser } from "./data/users.js";
 
 setErrorNotifier((message) => toast(message, "error"));
 
+const loginRoot = document.getElementById("login-root");
+const appShell = document.getElementById("app-shell");
+let currentUser = null;
 const ui = { page: "dashboard", period: "week", category: "All products", search: "", cart: [], customerId: "", payment: "Cash", reportPeriod: "week", reportFrom: new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10), reportTo: new Date().toISOString().slice(0,10), discountAuthorized: false, discountValue: "", cashReceived: "", issueBottle: false };
 const pageNames = { dashboard: "Overview", pos: "Point of sale", inventory: "Inventory", bottles: "Bottle tracking", customers: "Customers", expenses: "Expenses", reports: "Reports", settings: "Settings" };
 function toast(message, kind = "success") {
@@ -13,6 +18,25 @@ function toast(message, kind = "success") {
   const el = document.createElement("div"); el.className = "toast"; el.textContent = message;
   if (kind === "error") { el.style.color = "#b9424a"; el.style.borderColor = "#f4d5d7"; }
   region.appendChild(el); setTimeout(() => el.remove(), 3500);
+}
+function showLogin() {
+  currentUser = null;
+  appShell.hidden = true;
+  loginRoot.hidden = false;
+  renderLogin(loginRoot, showMain);
+}
+function showMain(user, notificationSent = null) {
+  currentUser = user;
+  loginRoot.hidden = true;
+  appShell.hidden = false;
+  const initials = user.name.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase();
+  document.getElementById("profile-name").textContent = user.name;
+  document.getElementById("profile-role").textContent = user.role;
+  document.getElementById("profile-initials").textContent = initials;
+  document.getElementById("top-avatar").textContent = initials;
+  render();
+  if (notificationSent === true) toast("Login notification sent to rogerviral74@gmail.com.");
+  if (notificationSent === false) toast("Signed in, but the email notification could not be sent. Check server email settings.", "error");
 }
 function getCustomer(id) { return state.customers.find(c => c.id === id); }
 function startOfDay(date = new Date()) { const d = new Date(date); d.setHours(0,0,0,0); return d; }
@@ -221,7 +245,7 @@ function renderSettings() {
       <section class="panel settings-card"><h3>Business & receipt details</h3><p>These details appear on printed receipts.</p><form id="business-form"><div class="form-grid"><div><label class="field-label">Business name</label><input class="form-input" name="name" value="${esc(state.business.name)}" required></div><div><label class="field-label">Phone</label><input class="form-input" name="phone" value="${esc(state.business.phone)}"></div><div><label class="field-label">Business address</label><input class="form-input" name="address" value="${esc(state.business.address)}"></div><div><label class="field-label">Tax details</label><input class="form-input" name="tax" value="${esc(state.business.tax)}"></div><div><label class="field-label">20L refundable deposit (₱)</label><input class="form-input" name="bottleDeposit" type="number" min="0" step=".01" value="${esc(state.settings.bottleDeposit??50)}"></div><div><label class="field-label">Receipt thank-you message</label><input class="form-input" name="receiptThanks" value="${esc(state.settings.receiptThanks)}"></div></div><button class="btn" style="margin-top:15px">Save business details</button></form></section>
       <section class="panel settings-card"><h3>Products & pricing</h3><p>Configure custom bottle sizes, unit costs, prices, and reorder thresholds.</p><button class="btn secondary" data-action="add-product">＋ Add custom product size</button><div style="margin-top:13px">${state.products.map(p=>`<div class="best-row" style="padding:8px 0;border-bottom:1px solid #f0f3f5"><span class="product-thumb ${esc(p.tint)}">${esc(p.icon)}</span><span class="product-meta"><strong>${esc(p.name)}</strong><small>${esc(p.size)} · Cost ${money(p.cost)} · Sell ${money(p.price)}</small></span><button class="text-button" data-edit-product="${esc(p.id)}">Edit</button></div>`).join("")}</div></section>
     </div><aside>    <section class="panel settings-card"><h3>Access & authorization</h3><p>This single-device demo has no secure user accounts.</p><div class="notice"><span>⚠</span><span>Role enforcement, password hashing, server-side sessions, and audit logs are not secure in a static browser app. A backend is required before real business use.</span></div><p style="margin-top:12px">Authorization dialogs use a demo PIN stored in this browser. This is a workflow preview, not production access control.</p></section>
-      <section class="panel settings-card"><h3>Data & storage</h3><p>Products, customers, sales, expenses, stock movements, bottle records, and settings are stored in this browser's local database.</p><button class="btn secondary" style="width:100%;margin-bottom:9px" data-action="export-backup">⇩ Download data backup</button><button class="btn secondary" style="width:100%" data-action="import-backup">⇧ Restore data backup</button><div class="notice blue" style="margin-top:13px"><span>ℹ</span><span>Use the export feature regularly. Browser data is not a substitute for a backed-up production database.</span></div></section>
+      ${currentUser?.role==="Administrator"?`<section class="panel settings-card"><h3>Data & storage</h3><p>Products, customers, sales, expenses, stock movements, bottle records, and settings are stored in this browser's local database.</p><button class="btn secondary" style="width:100%;margin-bottom:9px" data-action="export-backup">⇩ Download data backup</button><button class="btn secondary" style="width:100%" data-action="import-backup">⇧ Restore data backup</button><div class="notice blue" style="margin-top:13px"><span>ℹ</span><span>Use the export feature regularly. Browser data is not a substitute for a backed-up production database.</span></div></section>`:""}
       <section class="panel settings-card"><h3>Mobile payment workflow</h3><p>GCash and Maya receipts are stored as pending manual confirmation. This demo does not connect to provider APIs or simulate payment success.</p></section>
       <section class="panel settings-card"><h3>Recent audit activity</h3><p>Local activity log for demonstration only.</p>${(state.auditLogs||[]).slice(-6).reverse().map(log=>`<div class="bar-row-head"><span>${esc(log.action)} · ${esc(log.reference||"")}</span><small>${dateLabel(log.date)}</small></div>`).join("")||`<div class="empty-state">No audit events recorded.</div>`}</section></aside></div>`;
 }
@@ -340,8 +364,11 @@ function handleAction(action, target) {
   if(action==="export-movements"){downloadCsv("clearspring-stock-movements.csv",[["Date","Product","Movement","Quantity","Reference"],...state.movements.map(m=>[m.date,m.name,m.type,m.qty,m.reference])]);toast("Stock movement report exported.");return;}
   if(action==="export-customers"){downloadCsv("clearspring-customers.csv",[["Name","Phone","Business","Address","Outstanding bottles"],...state.customers.map(c=>[c.name,c.phone,c.business,c.address,c.outstanding||0])]);toast("Customer list exported.");return;}
   if(action==="export-expenses"){downloadCsv("clearspring-expenses.csv",[["ID","Date","Category","Description","Amount PHP","Approved by"],...state.expenses.map(e=>[e.id,e.date,e.category,e.description,e.amount,e.approvedBy])]);toast("Expense report exported.");return;}
-  if(action==="export-backup"){downloadJson("clearspring-data-backup.json",state);toast("Workspace backup downloaded.");return;}
-  if(action==="import-backup"){const input=document.createElement("input");input.type="file";input.accept=".json,application/json";input.onchange=async()=>{try{const f=input.files[0];if(!f)return;const data=normalizeState(JSON.parse(await f.text()));if(!confirm("Replace current browser data with this backup?"))return;replaceState(data);if(!await persist())return;render();toast("Workspace backup restored.");}catch(error){console.error(error);toast("Could not restore backup: invalid or unreadable file.","error");}};input.click();return;}
+  if(action==="export-backup"||action==="import-backup"){
+    if(currentUser?.role!=="Administrator"){toast("Only an administrator can manage data backups.","error");return;}
+    if(action==="export-backup"){downloadJson("clearspring-data-backup.json",state);toast("Workspace backup downloaded.");return;}
+    const input=document.createElement("input");input.type="file";input.accept=".json,application/json";input.onchange=async()=>{try{const f=input.files[0];if(!f)return;const data=normalizeState(JSON.parse(await f.text()));if(!confirm("Replace current browser data with this backup?"))return;replaceState(data);if(!await persist())return;render();toast("Workspace backup restored.");}catch(error){console.error(error);toast("Could not restore backup: invalid or unreadable file.","error");}};input.click();return;
+  }
   if(action==="print-receipt"){window.print();return;}
   if(action==="print-report"){document.body.classList.add("print-report");window.addEventListener("afterprint",()=>document.body.classList.remove("print-report"),{once:true});window.print();return;}
 }
@@ -431,14 +458,18 @@ document.addEventListener("submit",event=>{
 });
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
 document.getElementById("help-btn").addEventListener("click",()=>toast("Help center documentation is not connected in this offline demo."));
-document.getElementById("profile-menu").addEventListener("click",()=>toast("Signed in as Alex Morgan · Administrator"));
+document.getElementById("profile-menu").addEventListener("click",async()=>{try{await logoutUser();showLogin();}catch(error){console.error("Could not sign out.",error);toast("Could not sign out. Check the server connection and try again.","error");}});
 document.getElementById("alerts-btn").addEventListener("click",()=>{const low=state.products.filter(p=>p.stock<=p.lowAt);toast(low.length?`${low.length} low-stock item(s): ${low.map(p=>p.name).join(", ")}`:"You're all caught up — no inventory alerts.");});
 document.addEventListener("keydown",event=>{if(event.key==="Escape")document.getElementById("modal-root").innerHTML="";if(event.key==="F2"){event.preventDefault();go("pos");}});
 const today=new Date();document.getElementById("today-label").textContent=today.toLocaleDateString("en-PH",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
 document.querySelectorAll(".nav-item[data-page]").forEach(button=>button.addEventListener("click",()=>go(button.dataset.page)));
 window.addEventListener("resize",()=>{if(ui.page==="dashboard")drawChart();if(ui.page==="reports")drawReportChart();});
 document.getElementById("page-container").innerHTML = '<div class="panel" role="status">Opening local database…</div>';
-initializeDatabase().then(render).catch(error => {
+initializeDatabase().then(async () => {
+  const user = await getCurrentUser();
+  if (user) showMain(user);
+  else showLogin();
+}).catch(error => {
   console.error("Could not initialize the POS database.", error);
-  document.getElementById("page-container").innerHTML = '<div class="panel" role="alert"><h2>Could not open local database</h2><p>Your POS data has not been loaded. Check that browser storage is enabled, then reload this page.</p></div>';
+  loginRoot.innerHTML = '<main class="login-page"><section class="login-card" role="alert"><h1>Could not open the workspace</h1><p>Your POS data or login session could not be loaded. Check that browser storage is enabled, then reload this page.</p></section></main>';
 });

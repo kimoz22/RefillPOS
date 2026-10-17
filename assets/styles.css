@@ -14,6 +14,7 @@
   --shadow: 0 5px 20px rgba(33, 63, 90, .045);
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--canvas); color: var(--ink); font: 14px "DM Sans", sans-serif; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -47,6 +48,19 @@ button { cursor: pointer; }
 .profile-copy strong { font-size: 11px; }
 .profile-copy small { color: var(--muted); font-size: 10px; }
 .profile-more { border: 0; background: transparent; color: var(--muted); font-size: 20px; }
+.profile-more:hover { color: var(--red); }
+.login-page { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: radial-gradient(ellipse at top left,#eaf4ff 0,transparent 48%),var(--canvas); }
+.login-card { width: min(100%,420px); padding: 34px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: 0 16px 50px rgba(33,63,90,.09); }
+.login-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 32px; }
+.login-brand .brand-mark { font-size: 21px; }
+.login-card h1 { margin: 0; font: 700 25px Manrope,sans-serif; letter-spacing: -.6px; }
+.login-subtitle { margin: 8px 0 24px; color: var(--muted); font-size: 13px; }
+.login-card .field-label { display: block; margin: 15px 0 7px; }
+.login-card .form-input { height: 43px; }
+.login-submit { width: 100%; min-height: 43px; margin-top: 22px; font-size: 13px; }
+.login-error { margin: 12px 0 0; color: #b9424a; font-size: 12px; }
+.login-demo { display: grid; gap: 7px; margin: 20px 0 0; padding: 12px; border-radius: 7px; background: var(--blue-pale); color: #61788d; font-size: 11px; }
+.login-loading { display: grid; min-height: 100vh; place-items: center; color: var(--muted); }
 .main-area { min-height: 100vh; margin-left: 244px; }
 .topbar { display: flex; height: 67px; align-items: center; justify-content: space-between; padding: 0 39px; border-bottom: 1px solid #ebf0f4; background: rgba(255,255,255,.9); }
 .breadcrumbs { display: flex; gap: 11px; align-items: center; color: #9aa7b3; font-size: 12px; }
