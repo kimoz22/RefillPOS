@@ -28,6 +28,14 @@ const MIME_TYPES = {
 };
 const failedLogins = new Map();
 
+if (process.env.VERCEL) {
+  const requiredConfig = ["SESSION_SECRET", "ADMIN_PASSWORD", "STAFF_PASSWORD"];
+  const missingConfig = requiredConfig.filter(name => !process.env[name]);
+  if (missingConfig.length) {
+    throw new Error(`Missing required Vercel environment variables: ${missingConfig.join(", ")}`);
+  }
+}
+
 if (!process.env.SESSION_SECRET) {
   console.warn("SESSION_SECRET is not set; existing login sessions will expire when the server restarts.");
 }
@@ -44,7 +52,7 @@ function sendJson(response, status, data, headers = {}) {
 
 function cookieOptions(maxAge) {
   const options = [`${SESSION_COOKIE}=`, "HttpOnly", "SameSite=Strict", "Path=/", `Max-Age=${maxAge}`];
-  if (process.env.NODE_ENV === "production") options.push("Secure");
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL) options.push("Secure");
   return options.join("; ");
 }
 
@@ -89,6 +97,21 @@ function safeEqual(left, right) {
 
 function readJson(request) {
   return new Promise((resolve, reject) => {
+    if (request.body !== undefined) {
+      const body = request.body;
+      const serialized = typeof body === "string" ? body : JSON.stringify(body);
+      if (serialized.length > 8192) return reject(new Error("Request body is too large."));
+      try {
+        const parsed = typeof body === "string" ? JSON.parse(body || "{}") : body;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return reject(new Error("Request body must be a JSON object."));
+        }
+        resolve(parsed);
+      } catch {
+        reject(new Error("Request body must contain valid JSON."));
+      }
+      return;
+    }
     let body = "";
     request.setEncoding("utf8");
     request.on("data", chunk => {
@@ -117,7 +140,9 @@ async function handleApi(request, response, url) {
   }
 
   if (url.pathname === "/api/login" && request.method === "POST") {
-    const address = request.socket.remoteAddress || "unknown";
+    const address = request.headers["x-forwarded-for"]?.split(",")[0].trim()
+      || request.socket?.remoteAddress
+      || "unknown";
     const now = Date.now();
     const previousAttempts = failedLogins.get(address);
     const attempts = previousAttempts && now - previousAttempts.startedAt < LOGIN_WINDOW_MS
@@ -182,14 +207,23 @@ function serveStatic(request, response, url) {
   createReadStream(filePath).pipe(response);
 }
 
+function handleApiRequest(request, response, url) {
+  handleApi(request, response, url).catch(error => {
+    console.error("Login API request failed.", error);
+    if (!response.headersSent) sendJson(response, 500, { error: "The login service encountered an error." });
+    else response.destroy();
+  });
+}
+
+export default function vercelHandler(request, response) {
+  const url = new URL(request.url || "/", `https://${request.headers.host || "localhost"}`);
+  handleApiRequest(request, response, url);
+}
+
 const server = createServer((request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
   if (url.pathname.startsWith("/api/")) {
-    handleApi(request, response, url).catch(error => {
-      console.error("Login API request failed.", error);
-      if (!response.headersSent) sendJson(response, 500, { error: "The login service encountered an error." });
-      else response.destroy();
-    });
+    handleApiRequest(request, response, url);
     return;
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -199,6 +233,8 @@ const server = createServer((request, response) => {
   serveStatic(request, response, url);
 });
 
-server.listen(PORT, () => {
-  console.log(`ClearSpring POS running at http://localhost:${PORT}`);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  server.listen(PORT, () => {
+    console.log(`ClearSpring POS running at http://localhost:${PORT}`);
+  });
+}

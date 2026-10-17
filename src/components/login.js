@@ -18,10 +18,6 @@ export function renderLogin(root, onLogin) {
           <p class="login-error" id="login-error" role="alert" hidden></p>
           <button class="btn login-submit" type="submit">Sign in</button>
         </form>
-        <div class="login-demo">
-          <strong>Demo accounts</strong>
-          <span>Staff user: <b>user</b> / <b>1234</b></span>
-        </div>
       </section>
     </main>`;
 
