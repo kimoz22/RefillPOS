@@ -25,7 +25,7 @@ function showLogin() {
   loginRoot.hidden = false;
   renderLogin(loginRoot, showMain);
 }
-function showMain(user, notificationSent = null) {
+function showMain(user) {
   currentUser = user;
   loginRoot.hidden = true;
   appShell.hidden = false;
@@ -35,8 +35,6 @@ function showMain(user, notificationSent = null) {
   document.getElementById("profile-initials").textContent = initials;
   document.getElementById("top-avatar").textContent = initials;
   render();
-  if (notificationSent === true) toast("Login notification sent to rogerviral74@gmail.com.");
-  if (notificationSent === false) toast("Signed in, but the email notification could not be sent. Check server email settings.", "error");
 }
 function getCustomer(id) { return state.customers.find(c => c.id === id); }
 function startOfDay(date = new Date()) { const d = new Date(date); d.setHours(0,0,0,0); return d; }

@@ -5,7 +5,6 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import nodemailer from "nodemailer";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8000);
@@ -28,7 +27,6 @@ const MIME_TYPES = {
   ".webp": "image/webp"
 };
 const failedLogins = new Map();
-let mailTransport;
 
 if (!process.env.SESSION_SECRET) {
   console.warn("SESSION_SECRET is not set; existing login sessions will expire when the server restarts.");
@@ -111,45 +109,6 @@ function readJson(request) {
   });
 }
 
-function createMailTransport() {
-  const user = process.env.SMTP_USER;
-  const appPassword = process.env.SMTP_APP_PASSWORD;
-  if (!user || !appPassword) return null;
-  mailTransport ??= nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: Number(process.env.SMTP_PORT || 465),
-    secure: process.env.SMTP_SECURE !== "false",
-    auth: { user, pass: appPassword }
-  });
-  return mailTransport;
-}
-
-async function sendLoginNotification(user, request) {
-  const transport = createMailTransport();
-  if (!transport) {
-    console.warn("Login email not sent: SMTP_USER or SMTP_APP_PASSWORD is not configured.");
-    return false;
-  }
-  const recipient = process.env.LOGIN_ALERT_TO || "rogerviral74@gmail.com";
-  const signedInAt = new Date().toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "long", timeZone: "Asia/Manila" });
-  const ipAddress = request.socket.remoteAddress || "Unavailable";
-  await transport.sendMail({
-    from: process.env.SMTP_USER,
-    to: recipient,
-    subject: `ClearSpring login: ${user.name} signed in`,
-    text: [
-      "A successful sign-in to your ClearSpring Water Refill POS was detected.",
-      "",
-      `User: ${user.name}`,
-      `Role: ${user.role}`,
-      `Username: ${user.username}`,
-      `Time: ${signedInAt} (Philippine time)`,
-      `Remote address: ${ipAddress}`
-    ].join("\n")
-  });
-  return true;
-}
-
 async function handleApi(request, response, url) {
   if (url.pathname === "/api/session" && request.method === "GET") {
     const user = findSessionUser(request);
@@ -186,13 +145,7 @@ async function handleApi(request, response, url) {
     failedLogins.delete(address);
     const publicUser = { username: user.username, name: user.name, role: user.role };
     const headers = { "Set-Cookie": cookieOptions(SESSION_MAX_AGE_SECONDS).replace(`${SESSION_COOKIE}=`, `${SESSION_COOKIE}=${issueSession(publicUser)}`) };
-    let notificationSent = false;
-    try {
-      notificationSent = await sendLoginNotification(publicUser, request);
-    } catch (error) {
-      console.error("Could not send the successful-login email notification.", error);
-    }
-    return sendJson(response, 200, { user: publicUser, notificationSent }, headers);
+    return sendJson(response, 200, { user: publicUser }, headers);
   }
 
   if (url.pathname === "/api/logout" && request.method === "POST") {
@@ -248,7 +201,4 @@ const server = createServer((request, response) => {
 
 server.listen(PORT, () => {
   console.log(`ClearSpring POS running at http://localhost:${PORT}`);
-  if (!process.env.SMTP_USER || !process.env.SMTP_APP_PASSWORD) {
-    console.warn("Gmail alerts are not configured. Copy .env.example to .env and add a Gmail App Password.");
-  }
 });

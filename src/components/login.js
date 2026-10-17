@@ -39,7 +39,7 @@ export function renderLogin(root, onLogin) {
       const values = new FormData(form);
       try {
         const result = await loginUser(values.get("username"), values.get("password"));
-        onLogin(result.user, result.notificationSent);
+        onLogin(result.user);
       } catch (cause) {
       console.error("Could not start the demo login session.", cause);
         error.textContent = cause.message || "Unable to sign in. Check the server connection and try again.";

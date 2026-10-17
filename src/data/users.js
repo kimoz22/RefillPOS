@@ -11,7 +11,7 @@ export async function loginUser(username, password) {
     body: JSON.stringify({ username, password })
   });
   const result = await readResponse(response);
-  return { user: result.user, notificationSent: result.notificationSent };
+  return { user: result.user };
 }
 
 export async function getCurrentUser() {
