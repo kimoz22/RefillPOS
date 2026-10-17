@@ -1,5 +1,3 @@
-import "dotenv/config";
-
 import { createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
@@ -7,15 +5,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT || 8000);
+const PORT = 8000;
 const SESSION_COOKIE = "clearspring_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
-const SESSION_SECRET = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
+const SESSION_SECRET = "clearspring-demo-session-secret";
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGINS = 8;
 const USERS = [
-  { username: process.env.ADMIN_USERNAME || "admin", password: process.env.ADMIN_PASSWORD || "2468", name: "Alex Morgan", role: "Administrator" },
-  { username: process.env.STAFF_USERNAME || "user", password: process.env.STAFF_PASSWORD || "1234", name: "Jamie Reed", role: "Staff" }
+  { username: "admin", password: "2468", name: "Alex Morgan", role: "Administrator" },
+  { username: "user", password: "1234", name: "Jamie Reed", role: "Staff" }
 ];
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",

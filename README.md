@@ -15,11 +15,11 @@ Open `http://localhost:8000`. Run the Node server (not `python -m http.server`):
 
 Workspace data is saved in that browser's IndexedDB database (`clearspring-pos`), with separate stores for products, customers, sales, expenses, stock movements, audit logs, bottle records, and workspace settings. Existing data in the previous local-storage format is migrated automatically the first time the app opens. Use **Settings → Download data backup** regularly when evaluating the prototype.
 
-For local development, demo sign-ins are **admin** / **2468** (Administrator) and **user** / **1234** (Staff). Change these before sharing a deployment. Use the sign-out icon in the sidebar profile to return to the login screen. Sign-in lasts for the current browser tab.
+For local development, demo sign-ins are **admin** / **2468** (Administrator) and **user** / **1234** (Staff). These are built into the app for demo use and do not require a `.env` file. Use the sign-out icon in the sidebar profile to return to the login screen. Sign-in lasts for the current browser tab.
 
 ## Deploying to Vercel
 
-The static app and login API can be deployed together with the Vercel CLI or by importing this repository into Vercel. Set `SESSION_SECRET`, `ADMIN_PASSWORD`, and `STAFF_PASSWORD` as Vercel environment variables before deploying; use unique production passwords, and do not upload local `.env` files. The API requires these settings and uses secure session cookies on Vercel.
+The static app and login API can still be deployed to Vercel. This demo version is configured with fixed sample credentials so it works without local or deployment environment variables.
 
 ## Project structure
 
