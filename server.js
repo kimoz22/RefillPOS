@@ -8,12 +8,12 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 8000;
 const SESSION_COOKIE = "clearspring_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
-const SESSION_SECRET = "clearspring-demo-session-secret";
+const SESSION_SECRET = process.env.SESSION_SECRET || "clearspring-demo-session-secret";
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILED_LOGINS = 8;
 const USERS = [
-  { username: "admin", password: "2468", name: "Alex Morgan", role: "Administrator" },
-  { username: "user", password: "1234", name: "Jamie Reed", role: "Staff" }
+  { username: "admin", password: process.env.ADMIN_PASSWORD || "2468", name: "Alex Morgan", role: "Administrator" },
+  { username: "user", password: process.env.STAFF_PASSWORD || "1234", name: "Jamie Reed", role: "Staff" }
 ];
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -25,18 +25,6 @@ const MIME_TYPES = {
   ".webp": "image/webp"
 };
 const failedLogins = new Map();
-
-if (process.env.VERCEL) {
-  const requiredConfig = ["SESSION_SECRET", "ADMIN_PASSWORD", "STAFF_PASSWORD"];
-  const missingConfig = requiredConfig.filter(name => !process.env[name]);
-  if (missingConfig.length) {
-    throw new Error(`Missing required Vercel environment variables: ${missingConfig.join(", ")}`);
-  }
-}
-
-if (!process.env.SESSION_SECRET) {
-  console.warn("SESSION_SECRET is not set; existing login sessions will expire when the server restarts.");
-}
 
 function sendJson(response, status, data, headers = {}) {
   response.writeHead(status, {

@@ -19,7 +19,7 @@ For local development, demo sign-ins are **admin** / **2468** (Administrator) an
 
 ## Deploying to Vercel
 
-The static app and login API can still be deployed to Vercel. This demo version is configured with fixed sample credentials so it works without local or deployment environment variables.
+The static app and login API deploy directly to Vercel without a build step. Demo credentials work without deployment environment variables: **admin** / **2468** and **user** / **1234**. For a private demo, set `SESSION_SECRET`, `ADMIN_PASSWORD`, and `STAFF_PASSWORD` in the Vercel project settings to override the defaults. Do not use the demo credentials or fallback session secret for real accounts or customer data.
 
 ## Project structure
 
