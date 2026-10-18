@@ -12,6 +12,14 @@ npm start
 ```
 
 Open `http://localhost:8000`. Run the Node server (not `python -m http.server`): login uses its API.
+If port 8000 is already in use, choose another port in PowerShell before starting the server:
+
+```powershell
+$env:PORT = "8001"
+npm start
+```
+
+Then open `http://localhost:8001`.
 
 Workspace data is saved in that browser's IndexedDB database (`clearspring-pos`), with separate stores for products, customers, sales, expenses, stock movements, audit logs, bottle records, and workspace settings. Existing data in the previous local-storage format is migrated automatically the first time the app opens. Use **Settings → Download data backup** regularly when evaluating the prototype.
 

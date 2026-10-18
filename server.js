@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 8000;
+const PORT = Number(process.env.PORT || 8000);
 const SESSION_COOKIE = "clearspring_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const SESSION_SECRET = process.env.SESSION_SECRET || "clearspring-demo-session-secret";

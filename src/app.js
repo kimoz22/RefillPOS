@@ -8,7 +8,7 @@ setErrorNotifier((message) => toast(message, "error"));
 
 const loginRoot = document.getElementById("login-root");
 const appShell = document.getElementById("app-shell");
-const DEFAULT_USER = { username: "admin", name: "Alex Morgan", role: "Administrator" };
+const DEFAULT_USER = { username: "user", name: "Jamie Reed", role: "Staff" };
 let currentUser = null;
 const ui = { page: "dashboard", period: "week", category: "All products", search: "", cart: [], customerId: "", payment: "Cash", reportPeriod: "week", reportFrom: new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10), reportTo: new Date().toISOString().slice(0,10), discountAuthorized: false, discountValue: "", cashReceived: "", issueBottle: false };
 const pageNames = { dashboard: "Overview", pos: "Point of sale", inventory: "Inventory", bottles: "Bottle tracking", customers: "Customers", expenses: "Expenses", reports: "Reports", settings: "Settings" };
