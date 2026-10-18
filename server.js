@@ -26,6 +26,11 @@ const MIME_TYPES = {
 };
 const failedLogins = new Map();
 
+function normalizeApiPathname(pathname) {
+  if (!pathname || pathname === "/") return pathname || "/";
+  return pathname.replace(/\/+$/, "") || "/";
+}
+
 function sendJson(response, status, data, headers = {}) {
   response.writeHead(status, {
     "Cache-Control": "no-store",
@@ -119,13 +124,15 @@ function readJson(request) {
 }
 
 async function handleApi(request, response, url) {
-  if (url.pathname === "/api/session" && request.method === "GET") {
+  const pathname = normalizeApiPathname(url.pathname);
+
+  if (pathname === "/api/session" && request.method === "GET") {
     const user = findSessionUser(request);
     if (!user) return sendJson(response, 401, { user: null });
     return sendJson(response, 200, { user });
   }
 
-  if (url.pathname === "/api/login" && request.method === "POST") {
+  if (pathname === "/api/login" && request.method === "POST") {
     const address = request.headers["x-forwarded-for"]?.split(",")[0].trim()
       || request.socket?.remoteAddress
       || "unknown";
@@ -159,7 +166,7 @@ async function handleApi(request, response, url) {
     return sendJson(response, 200, { user: publicUser }, headers);
   }
 
-  if (url.pathname === "/api/logout" && request.method === "POST") {
+  if (pathname === "/api/logout" && request.method === "POST") {
     return sendJson(response, 200, { ok: true }, { "Set-Cookie": cookieOptions(0) });
   }
 
@@ -203,12 +210,16 @@ function handleApiRequest(request, response, url) {
 
 export default function vercelHandler(request, response) {
   const url = new URL(request.url || "/", `https://${request.headers.host || "localhost"}`);
-  handleApiRequest(request, response, url);
+  if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+    handleApiRequest(request, response, url);
+    return;
+  }
+  sendJson(response, 404, { error: "API endpoint not found." });
 }
 
 const server = createServer((request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
-  if (url.pathname.startsWith("/api/")) {
+  if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
     handleApiRequest(request, response, url);
     return;
   }
