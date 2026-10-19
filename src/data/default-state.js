@@ -29,13 +29,14 @@ export const defaultState = () => {
   ];
   return {
     business: { name: "ClearSpring Water Station", address: "24 Mabini Street, Poblacion, Makati City", phone: "(02) 8555 0198", tax: "VAT not registered" },
-    products, customers, sales, expenses: [
+    products, customers, sales, deliveries: [], supplierDeliveries: [], expenses: [
       { id: "EX-1004", date: day(0, 8), category: "Transport & delivery", description: "Morning delivery fuel", amount: 450, approvedBy: "Alex Morgan" },
       { id: "EX-1003", date: day(1, 12), category: "Electricity", description: "Monthly electricity bill", amount: 3250, approvedBy: "Alex Morgan" },
       { id: "EX-1002", date: day(2, 9), category: "Treatment & filtration", description: "Sediment filter replacement", amount: 860, approvedBy: "Alex Morgan" },
       { id: "EX-1001", date: day(5, 10), category: "Rent", description: "Station rent", amount: 8500, approvedBy: "Alex Morgan" }
     ],
     movements: [], auditLogs: [], nextSale: 1043, nextExpense: 1005, bottleLedger: [], bottleInventory: { filled: 12, empty: 24 },
+    nextDelivery: 1001,
     settings: { managerPin: "2468", currency: "PHP", bottleDeposit: 50, receiptThanks: "Thank you for choosing clean, refreshing water!" }
   };
 };
@@ -48,6 +49,12 @@ export function normalizeState(parsed) {
     business: { ...base.business, ...(parsed.business || {}) },
     settings: { ...base.settings, ...(parsed.settings || {}) },
     customers: Array.isArray(parsed.customers) ? parsed.customers : base.customers,
+    deliveries: Array.isArray(parsed.deliveries) ? parsed.deliveries.filter(delivery => !delivery.supplier) : [],
+    supplierDeliveries: [
+      ...(Array.isArray(parsed.supplierDeliveries) ? parsed.supplierDeliveries : []),
+      ...(Array.isArray(parsed.deliveries) ? parsed.deliveries.filter(delivery => delivery.supplier && !delivery.customerId) : [])
+    ],
+    nextDelivery: Number.isInteger(parsed.nextDelivery) ? parsed.nextDelivery : base.nextDelivery,
     expenses: Array.isArray(parsed.expenses) ? parsed.expenses : base.expenses,
     movements: Array.isArray(parsed.movements) ? parsed.movements : [],
     auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [],

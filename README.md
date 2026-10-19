@@ -21,7 +21,7 @@ npm start
 
 Then open `http://localhost:8001`.
 
-Workspace data is saved in that browser's IndexedDB database (`clearspring-pos`), with separate stores for products, customers, sales, expenses, stock movements, audit logs, bottle records, and workspace settings. Existing data in the previous local-storage format is migrated automatically the first time the app opens. Use **Settings → Download data backup** regularly when evaluating the prototype.
+Workspace data is saved in that browser's IndexedDB database (`clearspring-pos`), with separate stores for products, customers, sales, customer deliveries, expenses, stock movements, audit logs, bottle records, and workspace settings. Existing data in the previous local-storage format is migrated automatically the first time the app opens. Use **Settings → Download data backup** regularly when evaluating the prototype.
 
 For local development, demo sign-ins are **admin** / **2468** (Administrator) and **user** / **1234** (Staff). These are built into the app for demo use and do not require a `.env` file. Use the sign-out icon in the sidebar profile to return to the login screen. Sign-in lasts for the current browser tab.
 
@@ -71,6 +71,10 @@ The sample workspace is seeded with Philippine peso prices, Makati business deta
 - Manual payment confirmation requires an operator to verify the transaction outside this app first. The app does not connect to GCash, Maya, banks, or other provider APIs and never simulates provider confirmation.
 - Receipt preview with browser printing / Save as PDF; CSV reports that open in spreadsheet applications.
 - Stock sales, purchase and adjustment records, reorder alerts, and average unit cost updates.
+- Products support optional compressed PNG, JPG, or WebP images displayed on POS product tiles.
+- Customer deliveries can be recorded by customer, date, product, and quantity. Completing a delivery deducts the quantity from inventory once and records the customer drop-off in daily totals.
+- The overview includes today's completed customer-delivery amount and quantity, separately from POS revenue.
+- Sales reports show completed customer-delivery amounts and quantities separately from POS sales and payment tenders, with the same date-range filters.
 - Customer accounts, purchase history, customer credit collection, configurable refundable 20L bottle deposits, outstanding returnable-bottle balances, and filled/empty bottle tracking.
 - Expense records, estimated gross/net profit, transaction refunds with stock restoration, and a local audit activity log.
 - Business / receipt configuration and JSON data backup / restore.
@@ -82,7 +86,7 @@ This is a **single-device UI prototype**, not a complete multi-user accounting s
 Before handling real customer or payment data, replace the browser-only state layer with a secured backend and database. That deployment still needs, at minimum:
 
 - Server-side authentication, salted password hashing, secure session cookies, role/permission enforcement, and immutable audit records.
-- Atomic sale, stock, bottle-ledger, refund, and expense transactions with database backup / recovery and multi-terminal concurrency controls.
+- Atomic sale, customer-delivery, stock, bottle-ledger, refund, and expense transactions with database backup / recovery and multi-terminal concurrency controls.
 - Provider-approved payment integrations and verified webhook processing, or a controlled manual-confirmation process with staff attribution.
 - Production tax configuration, receipt-number concurrency, deployment monitoring, and operational security review.
 

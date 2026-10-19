@@ -2,8 +2,8 @@ import { defaultState, normalizeState } from "./default-state.js";
 
 const STORE_KEY = "clearspring-pos-v1";
 const DATABASE_NAME = "clearspring-pos";
-const DATABASE_VERSION = 1;
-const DATABASE_STORES = ["workspace", "products", "customers", "sales", "expenses", "movements", "auditLogs", "bottleLedger", "bottleInventory"];
+const DATABASE_VERSION = 3;
+const DATABASE_STORES = ["workspace", "products", "customers", "sales", "deliveries", "supplierDeliveries", "expenses", "movements", "auditLogs", "bottleLedger", "bottleInventory"];
 
 export let state = defaultState();
 let database;
@@ -17,14 +17,28 @@ function openDatabase() {
   return new Promise((resolve, reject) => {
     if (!("indexedDB" in window)) { reject(new Error("This browser does not support IndexedDB.")); return; }
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = event => {
       const db = request.result;
       DATABASE_STORES.forEach(store => {
         if (db.objectStoreNames.contains(store)) return;
-        if (store === "products" || store === "customers" || store === "sales" || store === "expenses") db.createObjectStore(store, { keyPath: "id" });
+        if (store === "products" || store === "customers" || store === "sales" || store === "deliveries" || store === "supplierDeliveries" || store === "expenses") db.createObjectStore(store, { keyPath: "id" });
         else if (store === "workspace" || store === "bottleInventory") db.createObjectStore(store, { keyPath: "key" });
         else db.createObjectStore(store, { autoIncrement: true });
       });
+      if (event.oldVersion < 3 && db.objectStoreNames.contains("deliveries")) {
+        const upgradeTransaction = request.transaction;
+        const deliveries = upgradeTransaction.objectStore("deliveries");
+        const cursorRequest = deliveries.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          if (cursor.value.supplier && !cursor.value.customerId) {
+            upgradeTransaction.objectStore("supplierDeliveries").put(cursor.value);
+            cursor.delete();
+          }
+          cursor.continue();
+        };
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error("Could not open the POS database."));
@@ -48,18 +62,18 @@ async function readDatabase(db) {
   const transaction = db.transaction(DATABASE_STORES, "readonly");
   const done = transactionComplete(transaction);
   const requests = DATABASE_STORES.map(store => requestValue(transaction.objectStore(store).getAll()));
-  const [workspaceRows, products, customers, sales, expenses, movements, auditLogs, bottleLedger, bottleInventoryRows] = await Promise.all(requests);
+  const [workspaceRows, products, customers, sales, deliveries, supplierDeliveries, expenses, movements, auditLogs, bottleLedger, bottleInventoryRows] = await Promise.all(requests);
   await done;
   const workspace = workspaceRows.find(row => row.key === "current");
   if (!workspace) return null;
   return normalizeState({
     ...workspace.data,
-    products, customers, sales, expenses, movements, auditLogs, bottleLedger,
+    products, customers, sales, deliveries, supplierDeliveries, expenses, movements, auditLogs, bottleLedger,
     bottleInventory: bottleInventoryRows.find(row => row.key === "current")?.data
   });
 }
 function writeDatabase(db, data) {
-  ["products", "customers", "sales", "expenses"].forEach(store => {
+  ["products", "customers", "sales", "deliveries", "supplierDeliveries", "expenses"].forEach(store => {
     const ids = new Set();
     data[store].forEach(record => {
       if (!record || (typeof record.id !== "string" && typeof record.id !== "number") || !String(record.id).trim() || ids.has(record.id)) {
@@ -78,11 +92,11 @@ function writeDatabase(db, data) {
       key: "current",
       data: {
         business: data.business, settings: data.settings,
-        nextSale: data.nextSale, nextExpense: data.nextExpense
+        nextSale: data.nextSale, nextDelivery: data.nextDelivery, nextExpense: data.nextExpense
       }
     });
     transaction.objectStore("bottleInventory").put({ key: "current", data: data.bottleInventory });
-    ["products", "customers", "sales", "expenses", "movements", "auditLogs", "bottleLedger"].forEach(store => {
+    ["products", "customers", "sales", "deliveries", "supplierDeliveries", "expenses", "movements", "auditLogs", "bottleLedger"].forEach(store => {
       const objectStore = transaction.objectStore(store);
       data[store].forEach(record => objectStore.add(record));
     });

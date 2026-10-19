@@ -10,8 +10,9 @@ const loginRoot = document.getElementById("login-root");
 const appShell = document.getElementById("app-shell");
 const DEFAULT_USER = { username: "user", name: "Jamie Reed", role: "Staff" };
 let currentUser = null;
-const ui = { page: "dashboard", period: "week", category: "All products", search: "", cart: [], customerId: "", payment: "Cash", reportPeriod: "week", reportFrom: new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10), reportTo: new Date().toISOString().slice(0,10), discountAuthorized: false, discountValue: "", cashReceived: "", issueBottle: false };
-const pageNames = { dashboard: "Overview", pos: "Point of sale", inventory: "Inventory", bottles: "Bottle tracking", customers: "Customers", expenses: "Expenses", reports: "Reports", settings: "Settings" };
+function dateInputValue(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
+const ui = { page: "dashboard", period: "week", category: "All products", search: "", cart: [], customerId: "", payment: "Cash", reportPeriod: "week", reportFrom: new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10), reportTo: new Date().toISOString().slice(0,10), deliveryDate: dateInputValue(), discountAuthorized: false, discountValue: "", cashReceived: "", issueBottle: false };
+const pageNames = { dashboard: "Overview", pos: "Point of sale", inventory: "Inventory", deliveries: "Deliveries", bottles: "Bottle tracking", customers: "Customers", expenses: "Expenses", reports: "Reports", settings: "Settings" };
 function toast(message, kind = "success") {
   const region = document.getElementById("toast-region");
   if (!region) return;
@@ -46,10 +47,31 @@ function sumSales(sales) { return sales.reduce((sum, sale) => sum + saleRevenue(
 function paidSales(sales) { return sales.filter(s => s.status === "Paid"); }
 function recognizedSales(sales) { return sales.filter(s => s.status !== "Refunded"); }
 function soldUnits(sales) { return recognizedSales(sales).reduce((n,s) => n + s.items.reduce((m,i) => m + (i.category === "Refills" ? i.qty : 0), 0), 0); }
+function completedDeliveriesInRange(from, to = new Date()) {
+  return state.deliveries.filter(delivery => {
+    if (delivery.status !== "Delivered" || delivery.supplier) return false;
+    const completedAt = new Date(delivery.deliveredAt || delivery.date);
+    return completedAt >= from && completedAt <= to;
+  });
+}
+function deliveryAmount(deliveries) {
+  return deliveries.reduce((sum, delivery) => {
+    const price = Number(delivery.unitPrice ?? state.products.find(product => product.id === delivery.productId)?.price ?? 0);
+    return sum + Number(delivery.total ?? price * Number(delivery.qty || 0));
+  }, 0);
+}
+function deliveryQuantityLabel(deliveries) {
+  const quantities = deliveries.reduce((totals, delivery) => {
+    const unit = delivery.unit || "units";
+    totals[unit] = (totals[unit] || 0) + Number(delivery.qty || 0);
+    return totals;
+  }, {});
+  return Object.entries(quantities).map(([unit, qty]) => `${qty} ${unit}`).join(", ") || "0 items delivered";
+}
 function go(page) { ui.page = page; ui.search = ""; window.scrollTo(0,0);document.querySelectorAll(".nav-item[data-page]").forEach(b => b.classList.toggle("active", b.dataset.page === page)); document.getElementById("page-crumb").textContent = pageNames[page]; document.getElementById("sidebar").classList.remove("open"); render(); }
 function render() {
   const root = document.getElementById("page-container");
-  const pages = { dashboard: renderDashboard, pos: renderPos, inventory: renderInventory, bottles: renderBottles, customers: renderCustomers, expenses: renderExpenses, reports: renderReports, settings: renderSettings };
+  const pages = { dashboard: renderDashboard, pos: renderPos, inventory: renderInventory, deliveries: renderDeliveries, bottles: renderBottles, customers: renderCustomers, expenses: renderExpenses, reports: renderReports, settings: renderSettings };
   root.innerHTML = (pages[ui.page] || renderDashboard)();
   document.getElementById("low-count").textContent=state.products.filter(p=>p.stock<=p.lowAt).length;
   if (ui.page === "dashboard") drawChart();
@@ -60,6 +82,9 @@ function dashboardChartPanel() {
 }
 function renderDashboard() {
   const todaySales = filteredSales("today"); const weekSales = filteredSales("week"); const monthSales = filteredSales("month");
+  const todayDeliveries = completedDeliveriesInRange(startOfDay());
+  const deliverySalesToday = deliveryAmount(todayDeliveries);
+  const deliveryQtyToday = deliveryQuantityLabel(todayDeliveries);
   const grossProfit = recognizedSales(todaySales).reduce((total,s) => total + s.items.reduce((sum,i) => sum + (i.price - i.cost) * i.qty,0) - s.discount,0);
   const expenses = state.expenses.filter(e => new Date(e.date) >= startOfDay()).reduce((sum,e) => sum + Number(e.amount),0);
   const best = {};
@@ -72,9 +97,10 @@ function renderDashboard() {
   const low = state.products.filter(p => p.stock <= p.lowAt);
   const actions = `<button class="btn secondary" data-action="export-sales">⇩ Export</button><button class="btn" data-page="pos">＋ New sale</button>`;
   return `${heading("Good morning, Alex 👋","Here’s what’s happening at your station today.",actions)}
-    <div class="stats-grid">
+    <div class="stats-grid dashboard-stats-grid">
       ${statCard("Sales today",recognizedSales(todaySales).length.toLocaleString(),"non-refunded transactions","▣")}
       ${statCard("Revenue today",money(sumSales(todaySales)),"vs. previous day","₱","","↑ 12.8%")}
+      ${statCard("Delivery sales today",money(deliverySalesToday),`${deliveryQtyToday} · ${todayDeliveries.length} deliveries`,"⇧","blue")}
       ${statCard("Revenue this week",money(sumSales(weekSales)),"last 7 days","↗","green","↑ 8.2%")}
       ${statCard("Revenue this month",money(sumSales(monthSales)),"month to date","▤","purple","↑ 5.4%")}
       ${statCard("Refills sold today",soldUnits(todaySales).toLocaleString(),"units across all sizes","◉","orange","")}
@@ -118,7 +144,7 @@ function renderPos() {
     <div class="pos-layout"><section>
       <div class="toolbar"><label class="search-wrap"><span>⌕</span><input class="input-control" id="product-search" placeholder="Search products..." value="${esc(ui.search)}"></label><button class="btn secondary" data-action="add-product">＋ Add product</button></div>
       <div class="category-row">${categories.map(c=>`<button class="chip ${ui.category===c?"active":""}" data-category="${esc(c)}">${esc(c)}</button>`).join("")}</div>
-      <div class="product-grid">${products.map(p=>`<button class="pos-product" data-add-cart="${esc(p.id)}" ${p.stock<1?"disabled":""}><span class="product-symbol ${esc(p.tint)}">${esc(p.icon)}</span><strong>${esc(p.name)}</strong><small>${p.stock} ${esc(p.unit)} in stock</small><span class="product-price">${money(p.price)}</span></button>`).join("")||`<div class="empty-state">No products match your search.</div>`}</div>
+      <div class="product-grid">${products.map(p=>`<button class="pos-product" data-add-cart="${esc(p.id)}" ${p.stock<1?"disabled":""}>${p.image?`<img class="product-photo" src="${esc(p.image)}" alt="">`:`<span class="product-symbol ${esc(p.tint)}">${esc(p.icon)}</span>`}<strong>${esc(p.name)}</strong><small>${p.stock} ${esc(p.unit)} in stock</small><span class="product-price">${money(p.price)}</span></button>`).join("")||`<div class="empty-state">No products match your search.</div>`}</div>
     </section><section class="panel cart-panel"><div class="cart-header"><h2>Current order <span class="cart-count">${cart.reduce((n,l)=>n+l.qty,0)}</span></h2><button class="text-button" data-action="reset-cart">Clear</button></div>
       <div class="cart-items">${cart.length?cart.map(line=>`<div class="cart-line"><div><strong>${esc(line.product.name)}</strong><small>${money(line.product.price)} each</small><div class="qty-controls"><button data-qty="${esc(line.productId)}" data-delta="-1" aria-label="Decrease quantity">−</button><span>${line.qty}</span><button data-qty="${esc(line.productId)}" data-delta="1" aria-label="Increase quantity">+</button></div></div><span class="cart-line-total">${money(line.product.price*line.qty)}</span></div>`).join(""):`<div class="cart-empty">Your order is empty.<br>Add products to get started.</div>`}</div>
       <div class="cart-form"><label class="field-label" for="customer-select">Customer</label><select class="form-input full-input" id="customer-select"><option value="">Walk-in customer</option>${customerOptions}</select>
@@ -144,7 +170,7 @@ function renderInventory() {
     <table class="data-table"><thead><tr><th>Product</th><th>Category</th><th>On hand</th><th>Reorder at</th><th>Unit cost</th><th>Selling price</th><th>Stock status</th><th>Actions</th></tr></thead><tbody id="inventory-rows">${inventoryRows(state.products)}</tbody></table>
     <div class="table-footer"><span>${state.products.length} products · ${low.length} low-stock alerts</span><span>Last updated just now</span></div></section>
     <div class="dashboard-grid" style="margin-top:16px"><section class="panel"><div class="panel-heading"><div><h2>Recent stock movements</h2><p>Purchases, sales, and adjustments</p></div></div>${movementsTable()}</section>
-    <section class="panel"><div class="panel-heading"><div><h2>Inventory actions</h2><p>Record a purchase or correct stock.</p></div></div><button class="btn secondary" style="width:100%;margin-bottom:9px" data-action="stock-purchase">＋ Record stock purchase</button><button class="btn secondary" style="width:100%" data-action="stock-adjust">↕ Adjust stock</button><div class="notice blue" style="margin-top:14px"><span>ℹ</span><span>Every stock change is recorded in the movement log. Manager authorization is required in production.</span></div></section></div>`;
+    <section class="panel"><div class="panel-heading"><div><h2>Inventory actions</h2><p>Record a purchase or correct stock.</p></div></div><button class="btn secondary" style="width:100%;margin-bottom:9px" data-action="stock-purchase">＋ Record stock purchase</button><button class="btn secondary" style="width:100%;margin-bottom:9px" data-page="deliveries">↗ Manage customer deliveries</button><button class="btn secondary" style="width:100%" data-action="stock-adjust">↕ Adjust stock</button><div class="notice blue" style="margin-top:14px"><span>ℹ</span><span>Every stock change is recorded in the movement log. Manager authorization is required in production.</span></div></section></div>`;
 }
 function inventoryRows(products) {
   if(!products.length) return `<tr><td colspan="8" class="empty-state">No inventory items found.</td></tr>`;
@@ -153,6 +179,24 @@ function inventoryRows(products) {
 function movementsTable() {
   const list=state.movements.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
   return `<table class="data-table"><thead><tr><th>Date</th><th>Item</th><th>Movement</th><th>Qty</th></tr></thead><tbody>${list.length?list.map(m=>`<tr><td>${dateLabel(m.date)}</td><td><strong>${esc(m.name)}</strong></td><td>${esc(m.type)}</td><td>${m.qty>0?"+":""}${m.qty}</td></tr>`).join(""):`<tr><td colspan="4" class="empty-state">No stock movements recorded yet.</td></tr>`}</tbody></table>`;
+}
+function renderDeliveries() {
+  const records=state.deliveries.filter(delivery=>!delivery.supplier);
+  const dayRows=records.filter(delivery=>dateInputValue(new Date(delivery.date))===ui.deliveryDate);
+  const completed=dayRows.filter(delivery=>delivery.status==="Delivered");
+  const pending=dayRows.filter(delivery=>delivery.status==="Pending");
+  const customersServed=new Set(completed.map(delivery=>delivery.customerId)).size;
+  const productTotals=completed.reduce((totals,delivery)=>{const key=delivery.productId,unitPrice=Number(delivery.unitPrice??state.products.find(product=>product.id===delivery.productId)?.price??0);totals[key]??={name:delivery.productName,unit:delivery.unit,qty:0,total:0};totals[key].qty+=delivery.qty;totals[key].total+=Number(delivery.total??unitPrice*delivery.qty);return totals;},{});
+  const dailyBreakdown=Object.values(productTotals);
+  const dailyTotal=completed.reduce((sum,delivery)=>sum+Number(delivery.total??Number(delivery.unitPrice??state.products.find(product=>product.id===delivery.productId)?.price??0)*delivery.qty),0);
+  const rows=dayRows.slice().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const actions=`<label class="search-wrap" style="max-width:180px"><span>▦</span><input class="input-control" id="delivery-date-filter" aria-label="Delivery date" type="date" value="${esc(ui.deliveryDate)}"></label><button class="btn" data-action="add-delivery">＋ Record customer delivery</button>`;
+  return `${heading("Customer deliveries","Record daily customer drop-offs. Completing a delivery subtracts the delivered quantity from inventory.",actions)}
+    <div class="stats-grid">${statCard("Completed deliveries",completed.length.toLocaleString(),"on the selected day","✓","green")}${statCard("Customers served",customersServed.toLocaleString(),"on the selected day","♙","blue")}${statCard("Pending deliveries",pending.length.toLocaleString(),"still to be delivered","◷","orange")}${statCard("Delivered total",money(dailyTotal),"completed customer deliveries","₱","purple")}</div>
+    ${dailyBreakdown.length?`<section class="panel" style="margin-bottom:15px"><div class="panel-heading"><div><h2>Daily product totals</h2><p>Completed deliveries for ${dateLabel(`${ui.deliveryDate}T12:00:00`)}</p></div></div><div class="best-list">${dailyBreakdown.map(item=>`<div class="best-row"><div class="product-thumb blue">⇧</div><div class="product-meta"><strong>${esc(item.name)}</strong><small>${item.qty} ${esc(item.unit)} delivered · ${money(item.total)}</small></div><span class="best-amount">${money(item.total)}</span></div>`).join("")}</div></section>`:""}
+    <section class="table-panel"><div class="table-heading"><div class="table-title"><h2>Deliveries for ${dateLabel(`${ui.deliveryDate}T12:00:00`)}</h2><p>Pending deliveries do not reduce stock; mark them delivered when the customer receives them.</p></div></div>
+      <table class="data-table"><thead><tr><th>Delivery</th><th>Customer</th><th>Product</th><th>Quantity</th><th>Unit price</th><th>Total</th><th>Status</th><th>Completed at</th><th>Action</th></tr></thead><tbody>${rows.length?rows.map(delivery=>{const unitPrice=Number(delivery.unitPrice??state.products.find(product=>product.id===delivery.productId)?.price??0),total=Number(delivery.total??unitPrice*delivery.qty);return `<tr><td class="id-cell">${esc(delivery.id)}</td><td><strong>${esc(delivery.customer)}</strong></td><td>${esc(delivery.productName)}</td><td>${esc(delivery.qty)} ${esc(delivery.unit)}</td><td>${money(unitPrice)}</td><td><strong>${money(total)}</strong></td><td><span class="status ${delivery.status==="Delivered"?"":"pending"}">${esc(delivery.status)}</span></td><td>${delivery.deliveredAt?new Date(delivery.deliveredAt).toLocaleTimeString("en-PH",{hour:"numeric",minute:"2-digit"}):"—"}</td><td>${delivery.status==="Pending"?`<button class="text-button" data-complete-delivery="${esc(delivery.id)}">Mark delivered</button>`:"—"}</td></tr>`;}).join(""):`<tr><td colspan="9" class="empty-state">No customer deliveries recorded for this date.</td></tr>`}</tbody></table>
+      <div class="table-footer"><span>${rows.length} deliveries · ${completed.length} completed</span><span>Stock decreases when marked delivered</span></div></section>`;
 }
 function renderBottles() {
   const outstanding=state.customers.reduce((sum,c)=>sum+Number(c.outstanding||0),0);
@@ -185,6 +229,10 @@ function renderExpenses() {
 function renderReports() {
   const range=ui.reportPeriod;
   const sales=range==="all"?state.sales.slice():range==="custom"?customReportSales():filteredSales(range);
+  const deliveries=filteredReportDeliveries(range);
+  const deliveryQuantity=deliveries.reduce((totals,delivery)=>{const unit=delivery.unit||"units";totals[unit]=(totals[unit]||0)+Number(delivery.qty||0);return totals;},{});
+  const deliveryQuantityLabel=Object.entries(deliveryQuantity).map(([unit,qty])=>`${qty} ${unit}`).join(", ")||"0";
+  const deliveryAmount=deliveries.reduce((sum,delivery)=>sum+Number(delivery.total??Number(delivery.unitPrice??state.products.find(product=>product.id===delivery.productId)?.price??0)*Number(delivery.qty||0)),0);
   const paid=paidSales(sales); const recognized=recognizedSales(sales); const revenue=sumSales(sales);
   const cash=sales.reduce((sum,s)=>sum+s.payments.filter(p=>p.status==="Paid"&&p.method.includes("Cash")).reduce((n,p)=>n+Number(p.amount),0)-Number(s.change||0),0)-state.bottleLedger.filter(entry=>(range==="all"||new Date(entry.date)>=periodStart(range))).reduce((sum,entry)=>sum+Number(entry.depositRefund||0),0);
   const credit=sales.filter(s=>s.status==="Credit").reduce((n,s)=>n+Number(s.balanceDue??s.total),0);
@@ -192,11 +240,12 @@ function renderReports() {
   const cogs=recognized.reduce((n,s)=>n+s.items.reduce((m,i)=>m+i.cost*i.qty,0),0);
   const gross=recognized.reduce((n,s)=>n+s.items.reduce((m,i)=>m+(i.price-i.cost)*i.qty,0)-s.discount,0);
   return `${heading("Reports","Review sales, payment mix, and product performance.",`<select class="select-control" id="report-period"><option value="today" ${range==="today"?"selected":""}>Today</option><option value="week" ${range==="week"?"selected":""}>Last 7 days</option><option value="month" ${range==="month"?"selected":""}>This month</option><option value="all" ${range==="all"?"selected":""}>All time</option><option value="custom" ${range==="custom"?"selected":""}>Custom dates</option></select>${range==="custom"?`<input class="select-control" id="report-from" type="date" aria-label="Start date" value="${esc(ui.reportFrom)}"><input class="select-control" id="report-to" type="date" aria-label="End date" value="${esc(ui.reportTo)}">`:""}<button class="btn secondary" data-action="export-report">⇩ Export CSV</button>`)}
-    <div class="stats-grid">${statCard("Revenue",money(revenue),`${sales.length} transactions`,"₱")}${statCard("Cash received",money(cash),"cash tenders less change","◉","green")}${statCard("Credit sales",money(credit),"unpaid customer balances","↗","orange")}${statCard("Net profit (est.)",money(gross-expenses),"after COGS & recorded expenses","◇","purple")}</div>
+    <div class="stats-grid report-stats-grid">${statCard("Revenue",money(revenue),`${sales.length} transactions`,"₱")}${statCard("Cash received",money(cash),"cash tenders less change","◉","green")}${statCard("Credit sales",money(credit),"unpaid customer balances","↗","orange")}${statCard("Net profit (est.)",money(gross-expenses),"after COGS & recorded expenses","◇","purple")}${statCard("Delivery amount",money(deliveryAmount),`${deliveries.length} completed deliveries`,"↗","blue")}${statCard("Delivery quantity",deliveryQuantityLabel,"completed delivery items","⇧","orange")}</div>
     <div class="dashboard-grid"><section class="panel"><div class="panel-heading"><div><h2>Sales trend</h2><p>Daily revenue for the selected period</p></div><span class="status">${range==="today"?"Today":range==="all"?"All time":range==="week"?"7 days":"This month"}</span></div><div class="chart-wrap"><canvas id="report-chart" aria-label="Sales trend chart"></canvas></div></section>
     <section class="panel"><div class="panel-heading"><div><h2>Payment methods</h2><p>Recorded tender totals</p></div></div>${paymentBreakdown(sales)}</section></div>
     <div class="dashboard-grid"><section class="panel"><div class="panel-heading"><div><h2>Sales by product / size</h2><p>Quantity sold and sales value</p></div></div>${productBreakdown(recognized)}</section><section class="panel"><div class="panel-heading"><div><h2>Sales by cashier</h2><p>Cashier totals for the selected period</p></div></div>${cashierBreakdown(recognized)}</section><section class="panel"><div class="panel-heading"><div><h2>Profit summary</h2><p>Selected period</p></div></div><div class="bar-list"><div class="bar-row-head"><span>Revenue (non-refunded)</span><strong>${money(sumSales(recognized))}</strong></div><div class="bar-row-head"><span>Product costs</span><strong>− ${money(cogs)}</strong></div><div class="bar-row-head"><span>Discounts</span><strong>− ${money(recognized.reduce((n,s)=>n+s.discount,0))}</strong></div><div class="bar-row-head"><span>Operating expenses</span><strong>− ${money(expenses)}</strong></div><div class="total-row grand" style="border-top:1px solid var(--line)"><span>Estimated net</span><strong>${money(gross-expenses)}</strong></div></div></section></div>
-    <section class="table-panel"><div class="table-heading"><div class="table-title"><h2>Transactions</h2><p>Filter: ${range==="all"?"All time":range==="today"?"Today":range==="week"?"Last 7 days":range==="custom"?`${esc(ui.reportFrom)} to ${esc(ui.reportTo)}`:"This month"} · Cashier Alex Morgan</p></div><button class="btn secondary small" data-action="print-report">Print / Save PDF</button></div>${salesTable(sales.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)))}</section>
+    <section class="table-panel"><div class="table-heading"><div class="table-title"><h2>Customer deliveries</h2><p>Completed deliveries within the selected report period · ${deliveryQuantityLabel} · ${money(deliveryAmount)}</p></div></div>${deliveryReportTable(deliveries)}</section>
+    <section class="table-panel" style="margin-top:16px"><div class="table-heading"><div class="table-title"><h2>Transactions</h2><p>Filter: ${range==="all"?"All time":range==="today"?"Today":range==="week"?"Last 7 days":range==="custom"?`${esc(ui.reportFrom)} to ${esc(ui.reportTo)}`:"This month"} · Cashier Alex Morgan</p></div><button class="btn secondary small" data-action="print-report">Print / Save PDF</button></div>${salesTable(sales.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)))}</section>
     <div class="notice blue" style="margin-top:13px"><span>ℹ</span><span>Revenue and estimated profit include non-refunded sales, including customer credit. Cash received counts completed cash tenders only; mobile payments marked pending are not confirmed deposits.</span></div>`;
 }
 function periodStart(range) { const d=startOfDay(); if(range==="week")d.setDate(d.getDate()-6);else if(range==="month")d.setDate(1);return d; }
@@ -205,6 +254,18 @@ function isWithinCustomReport(value) {
   return Number.isFinite(date.getTime())&&Number.isFinite(from.getTime())&&Number.isFinite(to.getTime())&&from<=to&&date>=from&&date<=to;
 }
 function customReportSales() { return ui.reportFrom<=ui.reportTo?state.sales.filter(s=>isWithinCustomReport(s.date)):[]; }
+function filteredReportDeliveries(range=ui.reportPeriod) {
+  return state.deliveries.filter(delivery=>{
+    if(delivery.status!=="Delivered"||delivery.supplier)return false;
+    const reportDate=delivery.deliveredAt||delivery.date;
+    if(range==="all")return true;
+    if(range==="custom")return isWithinCustomReport(reportDate);
+    return new Date(reportDate)>=periodStart(range)&&new Date(reportDate)<=new Date();
+  }).sort((a,b)=>new Date(b.deliveredAt||b.date)-new Date(a.deliveredAt||a.date));
+}
+function deliveryReportTable(deliveries) {
+  return `<table class="data-table"><thead><tr><th>Delivery</th><th>Date & time</th><th>Customer</th><th>Product</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>${deliveries.length?deliveries.map(delivery=>{const unitPrice=Number(delivery.unitPrice??state.products.find(product=>product.id===delivery.productId)?.price??0),amount=Number(delivery.total??unitPrice*Number(delivery.qty||0));return `<tr><td class="id-cell">${esc(delivery.id)}</td><td>${new Date(delivery.deliveredAt||delivery.date).toLocaleString("en-PH",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</td><td><strong>${esc(delivery.customer)}</strong></td><td>${esc(delivery.productName)}</td><td>${esc(delivery.qty)} ${esc(delivery.unit||"units")}</td><td>${money(unitPrice)}</td><td><strong>${money(amount)}</strong></td></tr>`;}).join(""):`<tr><td colspan="7" class="empty-state">No completed customer deliveries for this period.</td></tr>`}</tbody></table>`;
+}
 function cashierBreakdown(sales) {
   const totals={};sales.forEach(s=>{const cashier=s.cashier||"Unassigned";totals[cashier]=(totals[cashier]||0)+saleRevenue(s);});
   const entries=Object.entries(totals).sort((a,b)=>b[1]-a[1]),max=Math.max(1,...entries.map(([,value])=>value));
@@ -240,13 +301,24 @@ function renderSettings() {
       <section class="panel settings-card"><h3>Business & receipt details</h3><p>These details appear on printed receipts.</p><form id="business-form"><div class="form-grid"><div><label class="field-label">Business name</label><input class="form-input" name="name" value="${esc(state.business.name)}" required></div><div><label class="field-label">Phone</label><input class="form-input" name="phone" value="${esc(state.business.phone)}"></div><div><label class="field-label">Business address</label><input class="form-input" name="address" value="${esc(state.business.address)}"></div><div><label class="field-label">Tax details</label><input class="form-input" name="tax" value="${esc(state.business.tax)}"></div><div><label class="field-label">20L refundable deposit (₱)</label><input class="form-input" name="bottleDeposit" type="number" min="0" step=".01" value="${esc(state.settings.bottleDeposit??50)}"></div><div><label class="field-label">Receipt thank-you message</label><input class="form-input" name="receiptThanks" value="${esc(state.settings.receiptThanks)}"></div></div><button class="btn" style="margin-top:15px">Save business details</button></form></section>
       <section class="panel settings-card"><h3>Products & pricing</h3><p>Configure custom bottle sizes, unit costs, prices, and reorder thresholds.</p><button class="btn secondary" data-action="add-product">＋ Add custom product size</button><div style="margin-top:13px">${state.products.map(p=>`<div class="best-row" style="padding:8px 0;border-bottom:1px solid #f0f3f5"><span class="product-thumb ${esc(p.tint)}">${esc(p.icon)}</span><span class="product-meta"><strong>${esc(p.name)}</strong><small>${esc(p.size)} · Cost ${money(p.cost)} · Sell ${money(p.price)}</small></span><button class="text-button" data-edit-product="${esc(p.id)}">Edit</button></div>`).join("")}</div></section>
     </div><aside>    <section class="panel settings-card"><h3>Access & authorization</h3><p>This single-device demo has no secure user accounts.</p><div class="notice"><span>⚠</span><span>Role enforcement, password hashing, server-side sessions, and audit logs are not secure in a static browser app. A backend is required before real business use.</span></div><p style="margin-top:12px">Authorization dialogs use a demo PIN stored in this browser. This is a workflow preview, not production access control.</p></section>
-      ${currentUser?.role==="Administrator"?`<section class="panel settings-card"><h3>Data & storage</h3><p>Products, customers, sales, expenses, stock movements, bottle records, and settings are stored in this browser's local database.</p><button class="btn secondary" style="width:100%;margin-bottom:9px" data-action="export-backup">⇩ Download data backup</button><button class="btn secondary" style="width:100%" data-action="import-backup">⇧ Restore data backup</button><div class="notice blue" style="margin-top:13px"><span>ℹ</span><span>Use the export feature regularly. Browser data is not a substitute for a backed-up production database.</span></div></section>`:""}
+      ${currentUser?.role==="Administrator"?`<section class="panel settings-card"><h3>Data & storage</h3><p>Products, customers, sales, customer deliveries, expenses, stock movements, bottle records, and settings are stored in this browser's local database.</p><button class="btn secondary" style="width:100%;margin-bottom:9px" data-action="export-backup">⇩ Download data backup</button><button class="btn secondary" style="width:100%" data-action="import-backup">⇧ Restore data backup</button><div class="notice blue" style="margin-top:13px"><span>ℹ</span><span>Use the export feature regularly. Browser data is not a substitute for a backed-up production database.</span></div></section>`:""}
       <section class="panel settings-card"><h3>Mobile payment workflow</h3><p>GCash and Maya receipts are stored as pending manual confirmation. This demo does not connect to provider APIs or simulate payment success.</p></section>
       <section class="panel settings-card"><h3>Recent audit activity</h3><p>Local activity log for demonstration only.</p>${(state.auditLogs||[]).slice(-6).reverse().map(log=>`<div class="bar-row-head"><span>${esc(log.action)} · ${esc(log.reference||"")}</span><small>${dateLabel(log.date)}</small></div>`).join("")||`<div class="empty-state">No audit events recorded.</div>`}</section></aside></div>`;
 }
 function openProductModal(product) {
   const p=product||{id:"",name:"",category:"Refills",size:"",price:"",cost:"",stock:0,lowAt:10,unit:"pcs",icon:"◉",tint:"blue"};
-  modal(product?"Edit product":"Add product","Configure product size, stock, unit cost, and selling price. Manager PIN is required for this demo.",`<form id="product-form" data-id="${esc(p.id)}"><div class="form-grid"><div style="grid-column:1/-1"><label class="field-label">Product name</label><input class="form-input" name="name" required value="${esc(p.name)}" placeholder="e.g. 3L refill"></div><div><label class="field-label">Category</label><select class="form-input" name="category"><option ${p.category==="Refills"?"selected":""}>Refills</option><option ${p.category==="Bottles"?"selected":""}>Bottles</option><option ${p.category==="Accessories"?"selected":""}>Accessories</option><option ${p.category==="Packaging"?"selected":""}>Packaging</option></select></div><div><label class="field-label">Size / description</label><input class="form-input" name="size" value="${esc(p.size)}" placeholder="e.g. 3 L"></div><div><label class="field-label">Selling price (₱)</label><input class="form-input" name="price" type="number" min="0" step=".01" required value="${esc(p.price)}"></div><div><label class="field-label">Unit cost (₱)</label><input class="form-input" name="cost" type="number" min="0" step=".01" required value="${esc(p.cost)}"></div><div><label class="field-label">Stock on hand</label><input class="form-input" name="stock" type="number" min="0" required value="${esc(p.stock)}"></div><div><label class="field-label">Low-stock alert at</label><input class="form-input" name="lowAt" type="number" min="0" required value="${esc(p.lowAt)}"></div><div style="grid-column:1/-1"><label class="field-label">Manager PIN</label><input class="form-input" name="pin" type="password" required autocomplete="off"></div></div></form>`);
+  modal(product?"Edit product":"Add product","Configure product size, stock, unit cost, selling price, and an optional POS image. Manager PIN is required for this demo.",`<form id="product-form" data-id="${esc(p.id)}" data-remove-image="false"><div class="form-grid"><div style="grid-column:1/-1"><label class="field-label">Product name</label><input class="form-input" name="name" required value="${esc(p.name)}" placeholder="e.g. 3L refill"></div><div><label class="field-label">Category</label><select class="form-input" name="category"><option ${p.category==="Refills"?"selected":""}>Refills</option><option ${p.category==="Bottles"?"selected":""}>Bottles</option><option ${p.category==="Accessories"?"selected":""}>Accessories</option><option ${p.category==="Packaging"?"selected":""}>Packaging</option></select></div><div><label class="field-label">Size / description</label><input class="form-input" name="size" value="${esc(p.size)}" placeholder="e.g. 3 L"></div><div><label class="field-label">Selling price (₱)</label><input class="form-input" name="price" type="number" min="0" step=".01" required value="${esc(p.price)}"></div><div><label class="field-label">Unit cost (₱)</label><input class="form-input" name="cost" type="number" min="0" step=".01" required value="${esc(p.cost)}"></div><div><label class="field-label">Stock on hand</label><input class="form-input" name="stock" type="number" min="0" required value="${esc(p.stock)}"></div><div><label class="field-label">Low-stock alert at</label><input class="form-input" name="lowAt" type="number" min="0" required value="${esc(p.lowAt)}"></div><div style="grid-column:1/-1"><label class="field-label">Product image (optional)</label><input class="form-input" id="product-image-input" name="image" type="file" accept="image/png,image/jpeg,image/webp"><small class="image-help">PNG, JPG, or WebP · up to 5 MB. Image is resized for POS display.</small><div class="product-image-preview" id="product-image-preview">${p.image?`<img src="${esc(p.image)}" alt="Current product image">`:`<span>No image selected</span>`}</div>${p.image?`<button class="text-button" type="button" data-action="remove-product-image">Remove current image</button>`:""}</div><div style="grid-column:1/-1"><label class="field-label">Manager PIN</label><input class="form-input" name="pin" type="password" required autocomplete="off"></div></div></form>`);
+}
+async function prepareProductImage(file) {
+  if(!file.type.match(/^image\/(png|jpeg|webp)$/)||file.size>5*1024*1024)throw new Error("Choose a PNG, JPG, or WebP image no larger than 5 MB.");
+  const bitmap=await createImageBitmap(file);
+  try {
+    const scale=Math.min(1,800/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);
+    const blob=await new Promise((resolve,reject)=>canvas.toBlob(result=>result?resolve(result):reject(new Error("Could not process the selected image.")),"image/jpeg",.82));
+    return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error||new Error("Could not read the selected image."));reader.readAsDataURL(blob);});
+  } finally { bitmap.close(); }
 }
 function authorizeDiscount() {
   const html=`<form id="auth-form"><label class="field-label">Manager authorization PIN</label><input class="form-input full-input" name="pin" type="password" inputmode="numeric" required autocomplete="off"><p class="modal-subtitle">Demo PIN: 2468 · Replace with secure server-side authorization in production.</p></form>`;
@@ -292,6 +364,26 @@ function openStockModal(productId="", mode="adjust") {
   const opts=state.products.map(p=>`<option value="${esc(p.id)}" ${productId===p.id?"selected":""}>${esc(p.name)} · current ${p.stock}</option>`).join("");
   modal(mode==="purchase"?"Record stock purchase":"Adjust stock",mode==="purchase"?"Add purchased inventory and update average unit cost.":"Authorize and record a stock correction.",`<form id="stock-form" data-mode="${mode}"><label class="field-label">Product</label><select class="form-input full-input" name="productId">${opts}</select><label class="field-label">${mode==="purchase"?"Quantity purchased":"Quantity change (+ or −)"}</label><input class="form-input full-input" name="qty" type="number" ${mode==="purchase"?'min="1"':""} step="1" required><label class="field-label">Reason / supplier</label><input class="form-input full-input" name="reason" required placeholder="${mode==="purchase"?"Supplier or purchase reference":"Reason for adjustment"}">${mode==="purchase"?`<label class="field-label">Purchase cost per unit (₱)</label><input class="form-input full-input" name="cost" type="number" min="0" step=".01" required>`:""}<label class="field-label">Manager PIN</label><input class="form-input full-input" name="pin" type="password" required autocomplete="off"></form>`);
 }
+function openDeliveryModal() {
+  const customers=state.customers.map(customer=>`<option value="${esc(customer.id)}">${esc(customer.name)}</option>`).join("");
+  const products=state.products.map(product=>`<option value="${esc(product.id)}" data-price="${Number(product.price)}">${esc(product.name)} · ${money(product.price)} · ${product.stock} ${esc(product.unit)} available</option>`).join("");
+  const initialPrice=Number(state.products[0]?.price)||0;
+  modal("Record customer delivery","Choose the customer, delivery date, product, and quantity. The delivery total uses the product's POS selling price. Stock is deducted when delivery is completed.",`<form id="delivery-form"><label class="field-label">Customer</label><select class="form-input full-input" name="customerId" required><option value="">Select a customer</option>${customers}</select><label class="field-label">Delivery date</label><input class="form-input full-input" name="date" type="date" value="${esc(ui.deliveryDate)}" required><label class="field-label">Product</label><select class="form-input full-input" name="productId" required>${products}</select><label class="field-label">Quantity delivered</label><input class="form-input full-input" name="qty" id="delivery-qty" type="number" min="1" step="1" required><div class="delivery-price-summary"><div><span>Unit price</span><strong id="delivery-unit-price">${money(initialPrice)}</strong></div><div><span>Delivery total</span><strong id="delivery-total">${money(0)}</strong></div></div><label class="field-label">Notes (optional)</label><input class="form-input full-input" name="notes" maxlength="200" placeholder="Route, time, or delivery note"></form>`,"Save delivery");
+}
+function updateDeliveryQuote() {
+  const form=document.getElementById("delivery-form");
+  if(!form)return;
+  const productOption=form.elements.productId.selectedOptions[0];
+  const unitPrice=Number(productOption?.dataset.price)||0;
+  const qty=Number(form.elements.qty.value)||0;
+  document.getElementById("delivery-unit-price").textContent=money(unitPrice);
+  document.getElementById("delivery-total").textContent=money(unitPrice*qty);
+}
+function openCompleteDeliveryModal(deliveryId) {
+  const delivery=state.deliveries.find(item=>item.id===deliveryId);
+  if(!delivery||delivery.status!=="Pending"){toast("This delivery is no longer pending.","error");return;}
+  modal("Complete customer delivery",`Confirm ${delivery.qty} ${delivery.unit} of ${delivery.productName} was delivered to ${delivery.customer}. This will subtract it from stock.`, `<form id="delivery-complete-form" data-delivery-id="${esc(delivery.id)}"><label class="field-label">Confirm delivered quantity</label><input class="form-input full-input" name="qty" type="number" min="1" max="${delivery.qty}" step="1" value="${delivery.qty}" required></form>`,"Mark delivered");
+}
 function checkout() {
   const lines=ui.cart.map(l=>{const p=state.products.find(x=>x.id===l.productId);return p?{product:p,qty:l.qty}:null;}).filter(Boolean);
   if(!lines.length){toast("Add at least one product to the order.","error");return;}
@@ -334,11 +426,18 @@ function downloadJson(filename, data) {
 function exportSales(sales=state.sales) {
   downloadCsv("clearspring-sales.csv",[["Receipt","Date","Customer","Cashier","Payment","Status","Subtotal PHP","Discount PHP","Total PHP"],...sales.map(s=>[s.id,new Date(s.date).toISOString(),s.customer,s.cashier,s.payments.map(p=>p.method).join(" + "),s.status,s.subtotal,s.discount,s.total])]);
 }
+function exportReportCsv(sales, deliveries) {
+  const header=["Record type","Receipt / delivery","Date","Customer","Cashier","Payment","Status","Subtotal PHP","Discount PHP","Total PHP","Quantity","Unit","Unit price PHP"];
+  const saleRows=sales.map(s=>["Sale",s.id,new Date(s.date).toISOString(),s.customer,s.cashier,s.payments.map(p=>p.method).join(" + "),s.status,s.subtotal,s.discount,s.total,"","",""]);
+  const deliveryRows=deliveries.map(delivery=>{const unitPrice=Number(delivery.unitPrice??state.products.find(product=>product.id===delivery.productId)?.price??0),total=Number(delivery.total??unitPrice*Number(delivery.qty||0));return ["Customer delivery",delivery.id,new Date(delivery.deliveredAt||delivery.date).toISOString(),delivery.customer,"","",delivery.status,"","",total,delivery.qty,delivery.unit||"units",unitPrice];});
+  downloadCsv("clearspring-sales-and-deliveries.csv",[header,...saleRows,...deliveryRows]);
+}
 function handleAction(action, target) {
   if(action==="close-modal"){document.getElementById("modal-root").innerHTML="";return;}
   if(action==="reset-cart"){ui.cart=[];ui.discountValue="";ui.discountAuthorized=false;ui.cashReceived="";render();return;}
   if(action==="add-product"){openProductModal();return;}
   if(action==="edit-product"){openProductModal(state.products.find(p=>p.id===target.dataset.editProduct));return;}
+  if(action==="remove-product-image"){const form=document.getElementById("product-form");if(form){form.dataset.removeImage="true";form.dataset.image="";document.getElementById("product-image-input").value="";document.getElementById("product-image-preview").innerHTML="<span>No image selected</span>";target.remove();}return;}
   if(action==="authorize-discount"){authorizeDiscount();return;}
   if(action==="authorize-submit"){
     const pin=new FormData(document.getElementById("auth-form")).get("pin");
@@ -351,10 +450,12 @@ function handleAction(action, target) {
   if(action==="add-expense"){openExpenseModal();return;}
   if(action==="stock-adjust"){openStockModal("","adjust");return;}
   if(action==="stock-purchase"){openStockModal("","purchase");return;}
+  if(action==="add-delivery"){openDeliveryModal();return;}
   if(action==="bottle-return"){openBottleReturn();return;}
   if(action==="bottle-issue"){openBottleIssue();return;}
   if(action==="bottle-fill"){openBottleFill();return;}
-  if(action==="export-sales"||action==="export-report"){exportSales(ui.page==="reports"?filteredReportSales():state.sales);toast("Sales report exported.");return;}
+  if(action==="export-report"){exportReportCsv(filteredReportSales(),filteredReportDeliveries());toast("Sales and delivery report exported.");return;}
+  if(action==="export-sales"){exportSales(state.sales);toast("Sales report exported.");return;}
   if(action==="export-inventory"){downloadCsv("clearspring-inventory.csv",[["Product","Category","Size","Stock","Unit","Cost PHP","Price PHP","Reorder at"],...state.products.map(p=>[p.name,p.category,p.size,p.stock,p.unit,p.cost,p.price,p.lowAt])]);toast("Inventory exported.");return;}
   if(action==="export-movements"){downloadCsv("clearspring-stock-movements.csv",[["Date","Product","Movement","Quantity","Reference"],...state.movements.map(m=>[m.date,m.name,m.type,m.qty,m.reference])]);toast("Stock movement report exported.");return;}
   if(action==="export-customers"){downloadCsv("clearspring-customers.csv",[["Name","Phone","Business","Address","Outstanding bottles"],...state.customers.map(c=>[c.name,c.phone,c.business,c.address,c.outstanding||0])]);toast("Customer list exported.");return;}
@@ -396,7 +497,18 @@ function submitModal() {
     persist();document.getElementById("modal-root").innerHTML="";render();toast(mode==="confirm"?"Payment manually confirmed.":mode==="refund"?"Refund recorded and stock restored.":"Customer payment recorded.");return;
   }
   const productForm=document.getElementById("product-form");
-  if(productForm){if(!productForm.reportValidity())return;const f=new FormData(productForm),id=productForm.dataset.id;if(f.get("pin")!==state.settings.managerPin){toast("Authorization denied. PIN not recognized.","error");return;}const data={id:id||`p${Date.now()}`,name:String(f.get("name")).trim(),category:f.get("category"),size:String(f.get("size")).trim(),price:Number(f.get("price")),cost:Number(f.get("cost")),stock:Number(f.get("stock")),lowAt:Number(f.get("lowAt")),unit:f.get("category")==="Refills"?"refills":"pcs",icon:f.get("category")==="Bottles"?"♧":"◉",tint:f.get("category")==="Bottles"?"green":"blue"};if(!data.name||data.price<0||data.cost<0||data.stock<0){toast("Enter valid product details.","error");return;}const date=new Date().toISOString();state.auditLogs??=[];if(id){const index=state.products.findIndex(p=>p.id===id);const old=state.products[index];if(old.stock!==data.stock){state.movements.push({date,name:data.name,type:"Adjustment",qty:data.stock-old.stock,reference:"Product edit"});}state.products[index]=data;}else state.products.push(data);state.auditLogs.push({date,user:"Alex Morgan",action:id?"Product updated":"Product created",reference:data.id});persist();document.getElementById("modal-root").innerHTML="";render();toast(id?"Product updated.":"Product added.");return;}
+  if(productForm){
+    if(!productForm.reportValidity())return;
+    const f=new FormData(productForm),id=productForm.dataset.id;
+    if(f.get("pin")!==state.settings.managerPin){toast("Authorization denied. PIN not recognized.","error");return;}
+    const oldProduct=id?state.products.find(product=>product.id===id):null;
+    const data={id:id||`p${Date.now()}`,name:String(f.get("name")).trim(),category:f.get("category"),size:String(f.get("size")).trim(),price:Number(f.get("price")),cost:Number(f.get("cost")),stock:Number(f.get("stock")),lowAt:Number(f.get("lowAt")),unit:f.get("category")==="Refills"?"refills":"pcs",icon:f.get("category")==="Bottles"?"♧":"◉",tint:f.get("category")==="Bottles"?"green":"blue",image:productForm.dataset.removeImage==="true"?"":productForm.dataset.image||oldProduct?.image||""};
+    if(!data.name||data.price<0||data.cost<0||data.stock<0){toast("Enter valid product details.","error");return;}
+    const date=new Date().toISOString();state.auditLogs??=[];
+    if(id){const index=state.products.findIndex(product=>product.id===id);const old=state.products[index];if(old.stock!==data.stock){state.movements.push({date,name:data.name,type:"Adjustment",qty:data.stock-old.stock,reference:"Product edit"});}state.products[index]=data;}
+    else state.products.push(data);
+    state.auditLogs.push({date,user:"Alex Morgan",action:id?"Product updated":"Product created",reference:data.id});persist();document.getElementById("modal-root").innerHTML="";render();toast(id?"Product updated.":"Product added.");return;
+  }
   const customerForm=document.getElementById("customer-form");
   if(customerForm){if(!customerForm.reportValidity())return;const f=new FormData(customerForm);state.customers.push({id:`c${Date.now()}`,name:String(f.get("name")).trim(),phone:String(f.get("phone")).trim(),business:String(f.get("business")).trim(),address:String(f.get("address")).trim(),outstanding:0,depositBalance:0});persist();document.getElementById("modal-root").innerHTML="";render();toast("Customer added.");return;}
   const expenseForm=document.getElementById("expense-form");
@@ -409,6 +521,10 @@ function submitModal() {
   if(fillForm){if(!fillForm.reportValidity())return;const f=new FormData(fillForm),qty=Number(f.get("qty"));state.bottleInventory??={filled:12,empty:0};if(f.get("pin")!==state.settings.managerPin){toast("Authorization denied. PIN not recognized.","error");return;}if(qty<1||qty>state.bottleInventory.empty){toast("Quantity must not exceed available empty bottles.","error");return;}state.bottleInventory.empty-=qty;state.bottleInventory.filled+=qty;const date=new Date().toISOString();state.bottleLedger.push({date,customer:"Station stock",type:"Bottles refilled",qty});state.auditLogs??=[];state.auditLogs.push({date,user:"Alex Morgan",action:"Returned bottles refilled",reference:`${qty} bottle(s)`});persist();document.getElementById("modal-root").innerHTML="";render();toast(`${qty} bottle${qty>1?"s":""} refilled and ready.`);return;}
   const stockForm=document.getElementById("stock-form");
   if(stockForm){if(!stockForm.reportValidity())return;const f=new FormData(stockForm),p=state.products.find(x=>x.id===f.get("productId")),qty=Number(f.get("qty"));if(f.get("pin")!==state.settings.managerPin){toast("Authorization denied. PIN not recognized.","error");return;}if(!p||!Number.isInteger(qty)||qty===0){toast("Choose a product and enter a valid non-zero quantity.","error");return;}if(stockForm.dataset.mode==="purchase"){if(qty<1){toast("Purchase quantity must be at least one.","error");return;}const cost=Number(f.get("cost"));p.cost=(p.cost*p.stock+cost*qty)/(p.stock+qty);p.stock+=qty;}else {if(p.stock+qty<0){toast("Adjustment would result in negative stock.","error");return;}p.stock+=qty;}const date=new Date().toISOString();state.movements.push({date,name:p.name,type:stockForm.dataset.mode==="purchase"?"Purchase":"Adjustment",qty,reference:String(f.get("reason")).trim()});state.auditLogs??=[];state.auditLogs.push({date,user:"Alex Morgan",action:stockForm.dataset.mode==="purchase"?"Stock purchase":"Stock adjustment",reference:p.id,reason:String(f.get("reason")).trim()});persist();document.getElementById("modal-root").innerHTML="";render();toast("Inventory updated and movement recorded.");return;}
+  const deliveryForm=document.getElementById("delivery-form");
+  if(deliveryForm){if(!deliveryForm.reportValidity())return;const f=new FormData(deliveryForm),customer=getCustomer(String(f.get("customerId"))),product=state.products.find(item=>item.id===f.get("productId")),qty=Number(f.get("qty")),dateValue=String(f.get("date"));if(!customer||!product||!Number.isInteger(qty)||qty<1||!dateValue||!Number.isFinite(new Date(`${dateValue}T12:00:00`).getTime())){toast("Select a customer and product, then enter a valid delivery date and whole-number quantity.","error");return;}const unitPrice=Number(product.price);if(!Number.isFinite(unitPrice)||unitPrice<0){toast("The selected product has an invalid selling price.","error");return;}const date=new Date(`${dateValue}T12:00:00`).toISOString(),delivery={id:`DL-${state.nextDelivery++}`,date,customerId:customer.id,customer:customer.name,productId:product.id,productName:product.name,unit:product.unit,qty,unitPrice,total:unitPrice*qty,notes:String(f.get("notes")).trim(),status:"Pending"};state.deliveries.push(delivery);persist();document.getElementById("modal-root").innerHTML="";ui.deliveryDate=dateValue;render();toast(`${delivery.id} recorded for ${customer.name}.`);return;}
+  const completeForm=document.getElementById("delivery-complete-form");
+  if(completeForm){if(!completeForm.reportValidity())return;const delivery=state.deliveries.find(item=>item.id===completeForm.dataset.deliveryId);if(!delivery||delivery.status!=="Pending"){toast("This delivery is no longer pending.","error");return;}const qty=Number(new FormData(completeForm).get("qty")),product=state.products.find(item=>item.id===delivery.productId);if(!product){toast("The delivery product no longer exists. Restore or recreate the product before completing this delivery.","error");return;}if(!Number.isInteger(qty)||qty<1||qty>delivery.qty){toast("Enter a delivered quantity between one and the recorded quantity.","error");return;}if(qty>product.stock){toast(`Not enough ${product.unit} in stock. Available: ${product.stock}.`,"error");return;}const date=new Date().toISOString();product.stock-=qty;delivery.qty=qty;delivery.total=Number(delivery.unitPrice??product.price)*qty;delivery.status="Delivered";delivery.deliveredAt=date;delivery.deliveredBy=currentUser?.name||"Alex Morgan";state.movements.push({date,name:product.name,type:"Customer delivery",qty:-qty,reference:`${delivery.id} · ${delivery.customer}`});state.auditLogs??=[];state.auditLogs.push({date,user:delivery.deliveredBy,action:"Customer delivery completed",reference:delivery.id,customer:delivery.customer,qty});persist();document.getElementById("modal-root").innerHTML="";render();toast(`${qty} ${product.unit} of ${product.name} delivered to ${delivery.customer}; inventory updated.`);return;}
 }
 document.addEventListener("click",event=>{
   const page=event.target.closest("[data-page]");if(page){event.preventDefault();go(page.dataset.page);return;}
@@ -422,12 +538,14 @@ document.addEventListener("click",event=>{
   const issue=event.target.closest("[data-confirm-payment]");if(issue){openSaleActionModal(issue.dataset.confirmPayment,"confirm");return;}
   const refund=event.target.closest("[data-refund-sale]");if(refund){openSaleActionModal(refund.dataset.refundSale,"refund");return;}
   const collect=event.target.closest("[data-collect-credit]");if(collect){openSaleActionModal(collect.dataset.collectCredit,"collect");return;}
+  const completeDelivery=event.target.closest("[data-complete-delivery]");if(completeDelivery){openCompleteDeliveryModal(completeDelivery.dataset.completeDelivery);return;}
   const hist=event.target.closest("[data-customer-history]");if(hist){openCustomerHistory(hist.dataset.customerHistory);return;}
   const action=event.target.closest("[data-action]");if(action){handleAction(action.dataset.action,action);return;}
   if(event.target.matches("[data-modal-backdrop]"))document.getElementById("modal-root").innerHTML="";
 });
 document.addEventListener("input",event=>{
   if(event.target.id==="product-search"){ui.search=event.target.value;const cursor=event.target.selectionStart;render();const field=document.getElementById("product-search");field.focus();field.setSelectionRange(cursor,cursor);}
+  if(event.target.id==="delivery-qty")updateDeliveryQuote();
   if(event.target.id==="inventory-search"){const q=event.target.value.toLowerCase();document.getElementById("inventory-rows").innerHTML=inventoryRows(state.products.filter(p=>`${p.name} ${p.category}`.toLowerCase().includes(q)));}
   if(event.target.id==="customer-search"){const q=event.target.value.toLowerCase();document.getElementById("customer-rows").innerHTML=customerRows(state.customers.filter(c=>`${c.name} ${c.phone} ${c.business}`.toLowerCase().includes(q)));}
   if(event.target.id==="discount-input"||event.target.id==="cash-input"){
@@ -439,12 +557,27 @@ document.addEventListener("input",event=>{
     const changeInfo=document.getElementById("change-info");if(changeInfo)changeInfo.innerHTML=cash>total?`<div class="change-note" style="margin-top:8px">Change due: <strong>${money(cash-total)}</strong></div>`:"";
   }
 });
-document.addEventListener("change",event=>{
+document.addEventListener("change",async event=>{
   if(event.target.id==="chart-period"){ui.period=event.target.value;render();}
   if(event.target.id==="report-period"){ui.reportPeriod=event.target.value;render();}
   if(event.target.id==="report-from"){ui.reportFrom=event.target.value;ui.reportPeriod="custom";render();}
   if(event.target.id==="report-to"){ui.reportTo=event.target.value;ui.reportPeriod="custom";render();}
   if(event.target.id==="customer-select"){ui.customerId=event.target.value;}
+  if(event.target.id==="delivery-date-filter"){ui.deliveryDate=event.target.value;render();}
+  if(event.target.closest("#delivery-form")&&event.target.name==="productId")updateDeliveryQuote();
+  if(event.target.id==="product-image-input"){
+    const file=event.target.files[0],form=document.getElementById("product-form");
+    if(!file||!form)return;
+    try{
+      const image=await prepareProductImage(file);
+      form.dataset.image=image;form.dataset.removeImage="false";
+      document.getElementById("product-image-preview").innerHTML=`<img src="${esc(image)}" alt="Product image preview">`;
+    }catch(error){
+      console.error("Could not process product image.",error);
+      toast(error.message||"Could not process the selected image.","error");
+      event.target.value="";
+    }
+  }
   if(event.target.id==="bottle-deposit-check"){ui.issueBottle=event.target.checked;render();}
 });
 document.addEventListener("submit",event=>{
